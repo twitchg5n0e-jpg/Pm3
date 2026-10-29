@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Startet den Server fuer Android und iPhone (USB-Tethering bzw. Persoenlicher Hotspot per Kabel).
+# Startet den Pruefstand: das C++-Hauptprogramm (steuerung/) und den Webserver (webserver/) fuer Android
+# und iPhone (USB-Tethering bzw. Persoenlicher Hotspot per Kabel). Mit SIM=1 ./start.sh laeuft die
+# Steuerung ohne Hardware in der Simulation.
 # Erzeugt beim ersten Start eine eigene Zertifizierungsstelle (CA). Das Handy installiert deren
 # Zertifikat einmal, danach vertraut es jedem Server-Zertifikat, das dieses Skript ausstellt.
 set -euo pipefail
@@ -30,11 +32,17 @@ issue_cert() {
     -extfile <(printf 'subjectAltName=%s\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\n' "$san")
 }
 
+# Hauptprogramm beim ersten Start bauen, danach nur, wenn sich der Code geaendert hat.
+cmake -S steuerung -B steuerung/build -DCMAKE_BUILD_TYPE=Release >/dev/null
+cmake --build steuerung/build -j >/dev/null
+steuerung/build/pruefstand --konfig steuerung/pruefstand.conf --daten daten/messdaten ${SIM:+--sim} &
+STEUERUNG=$!
+
 # Python aus dem venv nehmen, falls vorhanden (dort ist aiortc installiert).
 PY=python3; [ -x venv/bin/python ] && PY=venv/bin/python
 SERVER=""
 CURRENT="-"
-trap '[ -n "$SERVER" ] && kill "$SERVER" 2>/dev/null; exit 0' EXIT INT TERM
+trap 'kill $STEUERUNG ${SERVER:-} 2>/dev/null; exit 0' EXIT INT TERM
 
 while true; do
   NOW="$(ips)"
@@ -42,13 +50,17 @@ while true; do
     if [ -n "$SERVER" ]; then kill "$SERVER" 2>/dev/null || true; wait "$SERVER" 2>/dev/null || true; fi
     CURRENT="$NOW"
     issue_cert "$CURRENT"
-    "$PY" server.py --cert "$DIR/server.crt" --key "$DIR/server.key" --ca "$DIR/kamera-ca.crt" &
+    "$PY" webserver/server.py --cert "$DIR/server.crt" --key "$DIR/server.key" --ca "$DIR/kamera-ca.crt" &
     SERVER=$!
     echo
     echo "Auf dem Handy öffnen:"
     echo "  https://$NAME:8443"
     for ip in $CURRENT; do echo "  https://$ip:8443"; done
     echo "Zertifikat einmalig installieren: dieselbe Adresse mit http:// und Port 8080"
+  fi
+  if ! kill -0 "$STEUERUNG" 2>/dev/null; then
+    echo "Die Steuerung wurde beendet, siehe Meldungen oben."
+    exit 1
   fi
   sleep 3
 done

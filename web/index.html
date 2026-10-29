@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Testverlauf</title>
+<title>Prüfstand</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -19,21 +19,59 @@
              calc(env(safe-area-inset-bottom) + 12px) calc(env(safe-area-inset-left) + 12px);
     display: flex; flex-direction: column; height: 100dvh;
   }
-  h1 { font-size: 20px; margin: 0 0 8px; }
-  #status, #live { background: #222; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; font-variant-numeric: tabular-nums; }
-  #live { background: #1d2a3a; }
-  #log { flex: 1; overflow-y: auto; margin: 0; padding: 0; list-style: none; font-variant-numeric: tabular-nums; }
+  h1 { font-size: 20px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; }
+  #zustand { font-size: 14px; padding: 4px 10px; border-radius: 999px; background: #444; }
+  #zustand.PRUEFUNG, #zustand.REFERENZFAHRT, #zustand.POSITIONIEREN { background: #2a6; }
+  #zustand.FEHLER { background: #c33; } #zustand.ENDE { background: #36c; }
+  #status, #live, #ergebnis { background: #222; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; font-variant-numeric: tabular-nums; }
+  #live { background: #1d2a3a; } #ergebnis { background: #1d2a3a; } #ergebnis:empty { display: none; }
+  .werte { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+  .wert { background: #222; border-radius: 8px; padding: 6px 10px; }
+  .wert small { color: #999; display: block; } .wert b { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .tasten { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+  details { background: #222; border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; }
+  details label { display: flex; justify-content: space-between; align-items: center; margin: 6px 0; }
+  details input, details select { font: inherit; width: 8em; padding: 4px; background: #111; color: #eee; border: 1px solid #444; border-radius: 4px; }
+  #log { flex: 1; min-height: 6em; overflow-y: auto; margin: 0; padding: 0; list-style: none; font-variant-numeric: tabular-nums; }
   #log li { padding: 3px 0; border-bottom: 1px solid #222; }
   .warn { color: #fc6; } .err { color: #f77; }
-  button { font: inherit; padding: 12px; border: 0; border-radius: 8px; background: #2a6; color: #fff; margin-top: 8px; }
+  button { font: inherit; padding: 12px 6px; border: 0; border-radius: 8px; background: #2a6; color: #fff; }
+  button.neben { background: #345; } button:disabled { opacity: .35; }
+  #nothalt { background: #c33; font-weight: bold; width: 100%; margin-top: 8px; }
 </style>
 </head>
 <body>
-<h1>Testverlauf</h1>
-<div id="status">Bereit</div>
+<h1>Prüfstand <span id="zustand">Verbinde …</span></h1>
+<div class="werte">
+  <div class="wert"><small>Kraft</small><b id="kraft">–</b> N</div>
+  <div class="wert"><small>Weg</small><b id="weg">–</b> mm</div>
+  <div class="wert"><small>Spitzenkraft</small><b id="spitze">–</b> N</div>
+  <div class="wert"><small>Position</small><b id="position">–</b> mm</div>
+</div>
+<div id="ergebnis"></div>
+<div class="tasten">
+  <button id="pruefStart">▶ Start</button>
+  <button id="pruefStopp" class="neben">■ Stopp</button>
+  <button id="quittieren" class="neben">Quittieren</button>
+  <button id="referenz" class="neben">Referenz</button>
+  <button id="tara" class="neben">Tara</button>
+  <button id="start" class="neben">Kamera an</button>
+  <button id="zurueck" class="neben">◀ 1 mm</button>
+  <button id="vor" class="neben">1 mm ▶</button>
+  <button id="uebernehmen" class="neben">Parameter ✓</button>
+</div>
+<details>
+  <summary>Prüfparameter</summary>
+  <label>Modus <select id="p-modus"><option value="zug">Zug</option><option value="druck">Druck</option></select></label>
+  <label>Geschwindigkeit (mm/min) <input id="p-geschwindigkeit" type="number" step="any" inputmode="decimal"></label>
+  <label>Maximalkraft (N) <input id="p-maxkraft" type="number" step="any" inputmode="decimal"></label>
+  <label>Maximalweg (mm) <input id="p-maxweg" type="number" step="any" inputmode="decimal"></label>
+  <label>Bruch bei Abfall um (%) <input id="p-bruch" type="number" step="any" inputmode="decimal"></label>
+</details>
 <div id="live">Auswertung: –</div>
+<div id="status">Kamera aus</div>
 <ul id="log"></ul>
-<button id="start">Start</button>
+<button id="nothalt">NOT-HALT</button>
 
 <script>
 const WIDTH = 1920, HEIGHT = 1080, FPS = 30;
@@ -186,7 +224,7 @@ async function start() {
   connect();
   keepScreenOn();
   startLive();
-  startBtn.textContent = 'Stopp';
+  startBtn.textContent = 'Kamera aus';
   log(`Aufnahme ${session} gestartet`);
 }
 
@@ -198,7 +236,7 @@ function stop() {
   pc = null;
   liveTrack?.stop();
   liveEl.textContent = 'Auswertung: –';
-  startBtn.textContent = 'Start';
+  startBtn.textContent = 'Kamera an';
   statusEl.textContent = `⏹ gestoppt · ${(sentBytes / 1e6).toFixed(1)} MB aufgenommen`;
   log('Aufnahme gestoppt');
 }
@@ -209,6 +247,86 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) log('⚠️ Seite im Hintergrund – Kamera pausiert', 'warn');
   else if (recorder && recorder.state !== 'inactive') keepScreenOn();
 });
+
+// --- Steuerung (C++-Hauptprogramm auf dem Pi) ---
+
+const $ = id => document.getElementById(id);
+const PARAMETER = ['modus', 'geschwindigkeit', 'maxkraft', 'maxweg', 'bruch'];
+let steuerung, zustand = '';
+
+function befehl(text) {
+  if (steuerung?.readyState === WebSocket.OPEN) steuerung.send(text);
+  else log('⚠️ Keine Verbindung zur Steuerung', 'warn');
+}
+
+function zeigeStatus(s) {
+  zustand = s.zustand;
+  $('zustand').textContent = s.zustand + (s.referenziert ? '' : ' · nicht referenziert');
+  $('zustand').className = s.zustand;
+  $('kraft').textContent = s.kraft.toFixed(1);
+  $('weg').textContent = s.weg.toFixed(3);
+  $('spitze').textContent = s.spitze.toFixed(1);
+  $('position').textContent = s.position.toFixed(3);
+  $('ergebnis').textContent = s.ergebnis ? `${s.ergebnis}${s.datei ? ' · ' + s.datei : ''}` : '';
+
+  // Felder nur nachfuehren, solange niemand darin tippt
+  for (const name of PARAMETER) {
+    const feld = $('p-' + name);
+    if (document.activeElement !== feld && !feld.dataset.geaendert) feld.value = s[name];
+  }
+
+  const still = ['BEREIT', 'ENDE'].includes(s.zustand);
+  $('pruefStart').disabled = !(still && s.referenziert);
+  $('pruefStopp').disabled = !['PRUEFUNG', 'REFERENZFAHRT', 'POSITIONIEREN'].includes(s.zustand);
+  $('quittieren').disabled = !['FEHLER', 'ENDE'].includes(s.zustand);
+  $('referenz').disabled = !(still || s.zustand === 'UNREFERENZIERT');
+  $('tara').disabled = s.zustand === 'PRUEFUNG';
+  $('vor').disabled = $('zurueck').disabled = !(still && s.referenziert);
+  $('uebernehmen').disabled = s.zustand === 'PRUEFUNG';
+}
+
+function verbindeSteuerung() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  steuerung = new WebSocket(`${proto}://${location.host}/steuerung`);
+  steuerung.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.typ === 'status') zeigeStatus(m);
+    else if (m.typ === 'ereignis') {
+      const cls = /Fehler|Abgelehnt|verloren|nicht erreichbar/.test(m.text) ? 'err' : '';
+      log(m.text.startsWith('Pruefung beendet') ? '✅ ' + m.text : m.text, cls);
+    }
+  };
+  steuerung.onclose = () => {
+    $('zustand').textContent = 'Keine Verbindung';
+    $('zustand').className = 'FEHLER';
+    setTimeout(verbindeSteuerung, 2000);
+  };
+}
+
+for (const name of PARAMETER) $('p-' + name).oninput = e => { e.target.dataset.geaendert = '1'; };
+
+$('uebernehmen').onclick = () => {
+  for (const name of PARAMETER) {
+    const feld = $('p-' + name);
+    if (feld.dataset.geaendert) befehl(`set ${name} ${feld.value}`);
+    delete feld.dataset.geaendert;
+  }
+  log('Parameter gesendet');
+};
+$('pruefStart').onclick = async () => {
+  // Die Kamera laeuft bei jeder Pruefung mit; der Tipp auf Start erlaubt sie auch auf dem iPhone.
+  if (!recording()) await start();
+  befehl('start');
+};
+$('pruefStopp').onclick = () => befehl('stopp');
+$('quittieren').onclick = () => befehl('quittieren');
+$('referenz').onclick = () => befehl('referenz');
+$('tara').onclick = () => befehl('tara');
+$('vor').onclick = () => befehl('fahren 1');
+$('zurueck').onclick = () => befehl('fahren -1');
+$('nothalt').onclick = () => befehl('nothalt');
+
+verbindeSteuerung();
 
 setInterval(() => {
   if (!recorder || recorder.state === 'inactive') return;

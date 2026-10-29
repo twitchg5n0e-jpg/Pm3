@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Liefert die Handy-Seite aus und speichert den Full-HD-Video-Stream, den sie schickt.
+"""Webserver des Pruefstands: verbindet die Handy-Seite (web/) mit der Steuerung (steuerung/) und der
+Bildanalyse (bildanalyse/).
 
-HTTPS (Port 8443): Kamera-Seite mit Testverlauf. Browser geben die Kamera nur ueber HTTPS frei.
-                   Das Live-Bild kommt per WebRTC und geht Bild fuer Bild an auswertung.verarbeite().
+HTTPS (Port 8443): Bedienoberflaeche. Browser geben die Kamera nur ueber HTTPS frei.
+                   /stream     speichert den Full-HD-Video-Stream des Handys
+                   /offer      Live-Bild per WebRTC, Bild fuer Bild an auswertung.verarbeite()
+                   /steuerung  Befehle an das C++-Hauptprogramm, Status und Ereignisse zurueck
 HTTP  (Port 8080): Einrichtungsseite, auf der das Handy einmalig das Zertifikat herunterlaedt.
 """
 import argparse
@@ -11,25 +14,28 @@ import pathlib
 import re
 import ssl
 import struct
+import sys
 from concurrent.futures import ThreadPoolExecutor
 
 from aiohttp import web
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
 from aiortc.mediastreams import MediaStreamError
 
-import auswertung
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+WEB = ROOT / "web"
+sys.path.insert(0, str(ROOT / "bildanalyse"))
+import auswertung  # noqa: E402
 
-HERE = pathlib.Path(__file__).resolve().parent
 SESSION_RE = re.compile(r"[0-9A-Za-z_-]{1,64}")
 NO_CACHE = {"Cache-Control": "no-store"}
 
 
 async def index(request):
-    return web.FileResponse(HERE / "index.html", headers=NO_CACHE)
+    return web.FileResponse(WEB / "index.html", headers=NO_CACHE)
 
 
 async def setup_page(request):
-    return web.FileResponse(HERE / "einrichten.html", headers=NO_CACHE)
+    return web.FileResponse(WEB / "einrichten.html", headers=NO_CACHE)
 
 
 async def ca_cert(request):
@@ -76,6 +82,63 @@ async def stream(request):
     return ws
 
 
+class Steuerung:
+    """Verbindung zum C++-Hauptprogramm: Befehle hin, Status und Ereignisse (JSON-Zeilen) an alle Handys."""
+
+    def __init__(self, port):
+        self.port = port
+        self.writer = None
+        self.clients = set()
+        self.letzter_status = None
+
+    async def lauf(self):
+        while True:
+            try:
+                reader, self.writer = await asyncio.open_connection("127.0.0.1", self.port)
+                await self.verteilen('{"typ":"ereignis","text":"Verbunden mit der Steuerung"}')
+                while line := await reader.readline():
+                    text = line.decode(errors="replace").strip()
+                    if text.startswith('{"typ":"status"'):
+                        self.letzter_status = text
+                    await self.verteilen(text)
+            except OSError:
+                pass
+            if self.writer:
+                self.writer.close()
+                self.writer = None
+                await self.verteilen('{"typ":"ereignis","text":"Verbindung zur Steuerung verloren"}')
+            await asyncio.sleep(2)
+
+    async def verteilen(self, text):
+        for ws in list(self.clients):
+            try:
+                await ws.send_str(text)
+            except ConnectionResetError:
+                self.clients.discard(ws)
+
+    def senden(self, befehl):
+        if self.writer is None:
+            return False
+        self.writer.write((" ".join(befehl.split()) + "\n").encode())
+        return True
+
+
+async def steuerung_ws(request):
+    ws = web.WebSocketResponse(heartbeat=10)
+    await ws.prepare(request)
+    steuerung = request.app["steuerung"]
+    steuerung.clients.add(ws)
+    if steuerung.letzter_status:
+        await ws.send_str(steuerung.letzter_status)
+    try:
+        async for msg in ws:
+            if msg.type == web.WSMsgType.TEXT and not steuerung.senden(msg.data):
+                await ws.send_str('{"typ":"ereignis","text":"Steuerung nicht erreichbar"}')
+    finally:
+        steuerung.clients.discard(ws)
+    return ws
+
+
 async def offer(request):
     params = await request.json()
     # Keine STUN-Server: Handy und Pi haengen direkt am selben Kabel.
@@ -90,7 +153,8 @@ async def offer(request):
     @pc.on("track")
     def on_track(track):
         if track.kind == "video":
-            request.app["live_tasks"].add(asyncio.ensure_future(live(track, channel)))
+            task = asyncio.ensure_future(live(track, channel, request.app["steuerung"]))
+            request.app["live_tasks"].add(task)
 
     @pc.on("connectionstatechange")
     async def on_state():
@@ -111,9 +175,9 @@ def auswerten(frame):
         return f"Fehler in der Auswertung: {e}"
 
 
-async def live(track, channel):
+async def live(track, channel, steuerung):
     """Gibt immer das neueste Bild an die Auswertung. Ist sie noch beschaeftigt, werden Bilder ausgelassen,
-    damit keine Verzoegerung entsteht."""
+    damit keine Verzoegerung entsteht. Das Ergebnis geht ans Handy und in die Messdatei der Steuerung."""
     loop = asyncio.get_running_loop()
     executor = ThreadPoolExecutor(max_workers=1)
     busy = None
@@ -121,8 +185,11 @@ async def live(track, channel):
     def deliver(fut):
         text = fut.result()
         ch = channel.get("info")
-        if text and ch and ch.readyState == "open":
+        if not text:
+            return
+        if ch and ch.readyState == "open":
             ch.send(str(text))
+        steuerung.senden("optik " + str(text).replace(";", ","))
 
     try:
         while True:
@@ -147,8 +214,11 @@ async def serve(args):
     camera.router.add_get("/", index)
     camera.router.add_get("/stream", stream)
     camera.router.add_post("/offer", offer)
+    camera.router.add_get("/steuerung", steuerung_ws)
     camera["pcs"] = set()
     camera["live_tasks"] = set()
+    camera["steuerung"] = Steuerung(args.steuerung_port)
+    steuerung_task = asyncio.create_task(camera["steuerung"].lauf())
 
     setup = web.Application()
     setup["ca"] = pathlib.Path(args.ca)
@@ -166,6 +236,7 @@ async def serve(args):
     try:
         await asyncio.Event().wait()
     finally:
+        steuerung_task.cancel()
         await asyncio.gather(*(pc.close() for pc in camera["pcs"]))
         for runner in runners:
             await runner.cleanup()
@@ -179,7 +250,8 @@ def main():
     parser.add_argument("--cert", required=True, help="Server-Zertifikat (von start.sh erzeugt)")
     parser.add_argument("--key", required=True, help="Schluessel zum Server-Zertifikat")
     parser.add_argument("--ca", required=True, help="CA-Zertifikat, das das Handy installiert")
-    parser.add_argument("--out", default=str(HERE / "aufnahmen"), help="Ordner fuer die Videos")
+    parser.add_argument("--out", default=str(ROOT / "daten" / "aufnahmen"), help="Ordner fuer die Videos")
+    parser.add_argument("--steuerung-port", type=int, default=7000, help="Port des C++-Hauptprogramms")
     args = parser.parse_args()
     try:
         asyncio.run(serve(args))

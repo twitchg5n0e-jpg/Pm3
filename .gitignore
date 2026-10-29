@@ -1,6 +1,9 @@
 # Auf dem Pi erzeugt, nicht ins Repository
 venv/
 __pycache__/
-aufnahmen/
+steuerung/build/
+daten/
+# Kalibrierung gehoert zum einzelnen Pruefstand
+steuerung/kalibrierung.conf
 # Enthält den geheimen Schlüssel der eigenen Zertifizierungsstelle
 zertifikat/
