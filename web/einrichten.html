@@ -4,45 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kamera einrichten</title>
-<style>
-  :root { color-scheme: dark; }
-  body { margin: 0; background: #111; color: #eee; font: 16px/1.5 system-ui, sans-serif;
-         padding: calc(env(safe-area-inset-top) + 16px) 16px 32px; }
-  h1 { font-size: 22px; margin: 0 0 12px; }
-  h2 { font-size: 18px; margin: 24px 0 6px; }
-  ol { padding-left: 22px; margin: 0; }
-  li { margin: 4px 0; }
-  a.btn { display: block; text-align: center; padding: 14px; border-radius: 8px; background: #2a6;
-          color: #fff; text-decoration: none; margin: 12px 0; }
-  a.btn.alt { background: #346; }
-</style>
 </head>
 <body>
 <h1>Kamera einrichten</h1>
 <p>Einmalig nötig: Das Handy muss dem Raspberry Pi vertrauen, sonst gibt der Browser die Kamera nicht frei.</p>
 
-<a class="btn" href="/kamera-ca.crt">1. Zertifikat herunterladen</a>
+<a href="/kamera-ca.crt">1. Zertifikat herunterladen</a>
 
 <h2>iPhone (Safari)</h2>
-<ol>
-  <li>Oben auf den Knopf tippen → <b>Erlauben</b>.</li>
-  <li>Einstellungen → <b>Profil geladen</b> → Installieren (Code eingeben).</li>
-  <li>Einstellungen → Allgemein → Info → ganz unten <b>Zertifikatsvertrauenseinstellungen</b> →
-      „Handy-Kamera CA“ <b>einschalten</b>.</li>
-</ol>
+<!-- TODO: Schritte: Profil laden, installieren, unter Info > Zertifikatsvertrauenseinstellungen einschalten -->
 
 <h2>Android (Chrome)</h2>
-<ol>
-  <li>Oben auf den Knopf tippen, die Datei wird gespeichert.</li>
-  <li>Einstellungen → Sicherheit → (Weitere Einstellungen →) Verschlüsselung &amp; Anmeldedaten →
-      <b>Zertifikat installieren</b> → <b>CA-Zertifikat</b> → „kamera-ca.crt“ wählen.</li>
-  <li>Android verlangt dafür eine Bildschirmsperre (PIN oder Muster).</li>
-</ol>
+<!-- TODO: Schritte: Sicherheit > Verschlüsselung & Anmeldedaten > Zertifikat installieren > CA-Zertifikat -->
 
-<a class="btn alt" id="weiter" href="#">2. Zur Kamera-Seite</a>
-
+<a id="weiter" href="#">2. Zur Bedienoberfläche</a>
 <script>
-  document.getElementById('weiter').href = `https://${location.hostname}:8443/`;
+  // TODO: Link auf https://<gleicher Name>:8443/ setzen
 </script>
 </body>
 </html>

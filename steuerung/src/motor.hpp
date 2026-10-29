@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <thread>
 
 class Hardware;
 
@@ -16,17 +15,15 @@ public:
     void sofortHalt();                          // ohne Rampe, z.B. bei einem Fehler
     void freigeben(bool an);
 
-    long position() const { return position_; }
-    void positionSetzen(long schritte) { position_ = schritte; }
-    bool steht() const { return ist_ == 0.0; }
+    long position() const;
+    void positionSetzen(long schritte);
+    bool steht() const;
 
 private:
-    void lauf();
+    void lauf();  // Thread: Rampe rechnen, Schritte ausgeben, Position zaehlen
 
     Hardware& hardware_;
-    const double beschleunigung_;
-    std::atomic<double> ziel_{0.0}, ist_{0.0};
+    double beschleunigung_;
     std::atomic<long> position_{0};
-    std::atomic<bool> halt_{false}, laeuft_{true};
-    std::thread thread_;
+    // TODO: Ziel- und Ist-Geschwindigkeit, Halt-Flag, Thread
 };

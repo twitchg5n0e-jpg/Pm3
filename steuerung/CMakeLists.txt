@@ -18,6 +18,7 @@ add_executable(pruefstand
   src/motor.cpp
   src/waegezelle.cpp
   src/messprotokoll.cpp
+  src/usb_export.cpp
   src/zustandsmaschine.cpp
   src/befehlsserver.cpp
 )

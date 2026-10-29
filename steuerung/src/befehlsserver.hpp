@@ -2,7 +2,6 @@
 
 #include <functional>
 #include <string>
-#include <vector>
 
 // TCP-Server nur fuer den Pi selbst (127.0.0.1). Der Webserver verbindet sich hierher, schickt Befehle
 // als Textzeilen und bekommt Status und Ereignisse als JSON-Zeilen zurueck.
@@ -20,14 +19,7 @@ public:
     void senden(const std::string& zeile);  // an alle verbundenen Clients
 
 private:
-    struct Client {
-        int fd;
-        std::string puffer;
-    };
-
-    void schliessen(std::size_t index);
-
     int lauscher_;
     Empfang empfang_;
-    std::vector<Client> clients_;
+    // TODO: Liste der verbundenen Clients mit Empfangspuffer
 };
