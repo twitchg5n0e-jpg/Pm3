@@ -1,30 +1,27 @@
 #!/usr/bin/env python3
-"""Webserver des Pruefstands: verbindet die Handy-Seite (web/) mit der Steuerung (steuerung/) und der
-Bildanalyse (bildanalyse/).
+"""Webserver des Pruefstands: verbindet die Handy-Seite (static/) mit der Steuerung (C++-Hauptprogramm,
+laeuft separat und ist ueber TCP erreichbar).
 
 HTTPS (Port 8443): Bedienoberflaeche. Browser geben die Kamera nur ueber HTTPS frei.
                    /stream     speichert den Full-HD-Video-Stream des Handys
-                   /offer      Live-Bild per WebRTC, Bild fuer Bild an auswertung.verarbeite()
+                   /offer      Live-Bild per WebRTC
                    /steuerung  Befehle an das C++-Hauptprogramm, Status und Ereignisse zurueck
 HTTP  (Port 8080): Einrichtungsseite, auf der das Handy einmalig das Zertifikat herunterlaedt.
 """
 import argparse
 import pathlib
-import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-WEB = ROOT / "web"
-sys.path.insert(0, str(ROOT / "bildanalyse"))
-import auswertung  # noqa: E402,F401
+ROOT = pathlib.Path(__file__).resolve().parent
+STATIC = ROOT / "static"
 
 
 async def index(request):
-    """Liefert web/index.html aus."""
+    """Liefert static/index.html aus."""
     # TODO
 
 
 async def setup_page(request):
-    """Liefert web/einrichten.html aus."""
+    """Liefert static/einrichten.html aus."""
     # TODO
 
 
@@ -67,8 +64,8 @@ async def offer(request):
 
 
 async def live(track, channel, steuerung):
-    """Gibt immer das neueste Bild an auswertung.verarbeite(). Ergebnis ans Handy (Datenkanal) und
-    als "optik <text>" an die Steuerung."""
+    """Verarbeitet immer das neueste Bild. Ergebnis ans Handy (Datenkanal) und als "optik <text>" an
+    die Steuerung."""
     # TODO
 
 

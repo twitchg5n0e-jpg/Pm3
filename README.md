@@ -1,11 +1,9 @@
-# Pm3 – Prüfstand
+# Pm3 – Prüfstand: Web-App
 
-Zug-/Druck-Prüfstand mit Raspberry Pi 4 und Handy als Bedienoberfläche.
+Bedienoberfläche des Zug-/Druck-Prüfstands fürs Handy. Die Steuerung (C++) ist auf `main`.
 
-| Ordner | Inhalt |
+| Pfad | Inhalt |
 | --- | --- |
-| `steuerung/` | Hauptprogramm in C++ (Zustandsmaschine, Motor, Wägezelle, CSV, USB-Export) |
-| `webserver/` | Python-Webserver |
-| `web/` | Handy-Seiten |
-| `bildanalyse/` | Auswertung des Kamerabilds |
-| `start.sh` | Startet alles |
+| `server.py` | Python-Webserver (HTTPS-Bedienoberfläche, HTTP-Einrichtung) |
+| `static/` | Handy-Seiten (`index.html`, `einrichten.html`) |
+| `start.sh` | Startet den Webserver |
