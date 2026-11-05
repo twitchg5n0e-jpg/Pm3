@@ -1,6 +1,9 @@
 # Auf dem Pi erzeugt, nicht ins Repository
-venv/
-__pycache__/
 daten/
 # Enthält den geheimen Schlüssel der eigenen Zertifizierungsstelle
-zertifikat/
+zertifikat/*
+!zertifikat/README.md
+# Build
+*.o
+pruefstand
+build/

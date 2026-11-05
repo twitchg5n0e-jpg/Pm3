@@ -36,8 +36,8 @@
     background: var(--bg); color: var(--text); font-size: 17px; /* >=16px: iOS zoomt sonst beim Antippen */
   }
   input:focus { outline: 2px solid var(--akzent); border-color: transparent; }
+  input.fehlt { outline: 2px solid var(--rot); border-color: transparent; }
   .reihe { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .reihe2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
   .hinweis { font-size: 13px; color: var(--grau); margin: 8px 0 0; }
 
   .werte { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -71,6 +71,21 @@
   #pruefStart { background: var(--gruen); color: #04130b; }
   #pruefStopp { background: var(--rot); }
   #export, #bestaetigen { background: var(--akzent); color: #04101f; }
+
+  /* Reiter: Farbe der Probe */
+  .reiter { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px; padding: 4px;
+    background: var(--bg); border: 1px solid var(--rand); border-radius: 12px; }
+  .reiter button { background: none; color: var(--grau); padding: 10px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .reiter button.an { background: var(--rand); color: var(--text); }
+  .reiter i { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--grau); }
+
+  /* Übersicht ?ansicht=alle */
+  .trenner { margin: 28px 0 10px; padding-top: 14px; border-top: 2px dashed var(--rand);
+    font-size: 15px; font-weight: 700; color: var(--akzent); }
+  body.alle .leiste { position: static; grid-auto-flow: row; grid-template-columns: 1fr 1fr;
+    margin: 0 -12px; background: none; }
+  body.alle { padding-bottom: 24px; }
   .leiste:not(:has(button:not([hidden]))) { display: none; }
 
   /* Schritt-Anzeige oben */
@@ -79,16 +94,9 @@
   .schritte span.an { background: var(--akzent); }
 
 
-  /* Kamerabild mit Auswahl-Box */
-  .bild { position: relative; overflow: hidden; border-radius: 10px; background: #000; touch-action: none; }
+  /* Kamerabild */
+  .bild { position: relative; overflow: hidden; border-radius: 10px; background: #000; }
   .bild video { width: 100%; display: block; min-height: 180px; }
-  .box { position: absolute; border: 2px solid var(--akzent); box-shadow: 0 0 0 9999px rgba(0,0,0,.55); cursor: move; }
-  .box i { position: absolute; width: 28px; height: 28px; margin: -14px; border-radius: 50%;
-    background: var(--akzent); border: 3px solid #fff; }
-  .box i[data-ecke="lo"] { left: 0; top: 0; }    .box i[data-ecke="ro"] { left: 100%; top: 0; }
-  .box i[data-ecke="lu"] { left: 0; top: 100%; } .box i[data-ecke="ru"] { left: 100%; top: 100%; }
-  .box.fest { border-color: var(--gruen); pointer-events: none; }
-  .box.fest i { display: none; }
   .aufnahme { color: var(--rot); font-weight: 600; }
 
 </style>
@@ -107,14 +115,17 @@
     <input id="testname" type="text" placeholder="z.B. PLA_Probe_01" autocomplete="off" autocapitalize="off">
   </label>
   <div class="reihe" style="margin-top:10px">
-    <label>Länge L (mm)<input id="laenge" type="number" inputmode="decimal" min="0" step="0.1" value="50"></label>
-    <label>Breite b (mm)<input id="breite" type="number" inputmode="decimal" min="0" step="0.1" value="10"></label>
-    <label>Dicke d (mm)<input id="dicke" type="number" inputmode="decimal" min="0" step="0.01" value="2"></label>
+    <label>Länge L (mm)<input id="laenge" type="number" inputmode="decimal" min="0" step="0.1"></label>
+    <label>Breite b (mm)<input id="breite" type="number" inputmode="decimal" min="0" step="0.1"></label>
+    <label>Dicke d (mm)<input id="dicke" type="number" inputmode="decimal" min="0" step="0.01"></label>
   </div>
-  <div class="reihe2">
-    <label>Max. Dehnung (%)<input id="maxDehnung" type="number" inputmode="decimal" min="0" step="1" value="40"></label>
-    <label>Belastung<input type="text" value="Zug" disabled></label>
+  <label style="margin-top:10px">Max. Dehnung (%)<input id="maxDehnung" type="number" inputmode="decimal" min="0" step="1"></label>
+  <label style="margin-top:10px">Farbe der Probe</label>
+  <div class="reiter" id="farbeWahl">
+    <button type="button" data-farbe="schwarz"><i style="background:#000"></i>Schwarz</button>
+    <button type="button" data-farbe="weiss"><i style="background:#fff"></i>Weiss</button>
   </div>
+  <input type="hidden" id="farbe" value="schwarz">
   <p class="hinweis">Querschnitt A = <b id="flaeche">20.00</b> mm² · Abbruch bei <b id="maxWegMm">20.0</b> mm Weg</p>
   <p class="hinweis" style="margin-top:14px">Ist die Probe fest eingespannt?</p>
   <button id="kameraAnsicht" style="width:100%; margin-top:8px">Kamera-Ansicht</button>
@@ -126,10 +137,9 @@
   <h2>Kamera</h2>
   <div class="bild" id="bild">
     <video id="video" autoplay muted playsinline></video>
-    <div class="box" id="box"><i data-ecke="lo"></i><i data-ecke="ro"></i><i data-ecke="lu"></i><i data-ecke="ru"></i></div>
   </div>
   <p class="hinweis" id="kameraInfo">Handy so hinstellen, dass die Probe im Bild ist.</p>
-  <p class="hinweis" id="boxInfo">Box auf die Probe ziehen (Ecken zum Vergrössern), dann bestätigen.</p>
+  <p class="hinweis" id="bildInfo">Ist die Probe gut zu sehen? Dann unten bestätigen.</p>
   <button id="kameraKnopf" style="width:100%; margin-top:10px">Kamera an</button>
 </section>
 
@@ -165,7 +175,7 @@
 
 <nav class="leiste">
   <button id="zurueckEingabe" data-ansicht="kamera">◀ Eingabe</button>
-  <button id="bestaetigen" data-ansicht="kamera">Bereich bestätigen</button>
+  <button id="bestaetigen" data-ansicht="kamera">Probe gut sichtbar</button>
   <button id="pruefStart" data-ansicht="kamera">Test starten</button>
   <button id="pruefStopp" data-ansicht="messung">Stopp</button>
   <button id="export" data-ansicht="ende">CSV auf USB</button>
@@ -177,6 +187,7 @@ const $ = id => document.getElementById(id);
 const PARAM = new URLSearchParams(location.search);
 const DEMO = PARAM.has('demo');            // index.html?demo          -> ohne Pi testen
 const NUR_ANSICHT = PARAM.get('ansicht');  // index.html?ansicht=ende  -> eine Ansicht fest anzeigen
+                                           // index.html?ansicht=alle  -> alle Ansichten untereinander
 
 // =====================================================================
 // Messwerte: aktueller Wert, Maximalwerte und alle Punkte des Tests
@@ -185,6 +196,9 @@ let aktuell = { zeit: 0, kraft: 0, weg: 0, dehnung: 0, spannung: 0 };  // letzte
 let max = { kraft: 0, dehnung: 0, spannung: 0 };                       // Maximalwerte des Tests
 let messwerte = [];   // alle Messpunkte des Tests: [{zeit s, kraft N, weg mm, dehnung %, spannung MPa}, ...]
 let testStart = 0;    // Zeitpunkt des Starts (ms)
+
+// false = kein Video aufnehmen und kein Export (gleicher Schalter wie config::DATEN_SPEICHERN im C++)
+const DATEN_SPEICHERN = false;
 
 // --- Probe aus den Eingabefeldern ---
 function probe() {
@@ -195,13 +209,16 @@ function probe() {
   return { L, b, d, A: b * d, maxProzent, maxWegMm: L * maxProzent / 100 };
 }
 function testName() { return $('testname').value.trim(); }
+function farbe() { return $('farbe').value; }   // 'schwarz' oder 'weiss'
+
+function zeigeFarbe() {
+  $('farbeWahl').querySelectorAll('button').forEach(b => b.classList.toggle('an', b.dataset.farbe === farbe()));
+}
 
 function zeigeProbe() {
   const p = probe();
   $('flaeche').textContent = p.A.toFixed(2);
   $('maxWegMm').textContent = p.maxWegMm.toFixed(1);
-  localStorage.setItem('probe', JSON.stringify(
-    ['testname', 'laenge', 'breite', 'dicke', 'maxDehnung'].map(id => [id, $(id).value])));
 }
 
 function neueMessung() {
@@ -311,16 +328,18 @@ function zeigeAnsicht() {
   }
   if (neu === 'messung') $('laufName').textContent = testName() || 'Messung (aktuell)';
   document.querySelectorAll('[data-ansicht]').forEach(el =>
-    el.hidden = !el.dataset.ansicht.split(' ').includes(neu));
-  // Start erst, wenn der Bildbereich bestätigt ist
-  if (neu === 'kamera') { $('bestaetigen').hidden = bereichFest; $('pruefStart').hidden = !bereichFest; }
+    el.hidden = neu !== 'alle' && !el.dataset.ansicht.split(' ').includes(neu));
+  if (!DATEN_SPEICHERN) $('export').hidden = true;   // Export ausgeschaltet
+  // Start erst, wenn bestaetigt ist, dass die Probe gut zu sehen ist
+  if (neu === 'kamera') { $('bestaetigen').hidden = bildOk; $('pruefStart').hidden = !bildOk; }
   if (neu === ansicht) return;
   const alt = ansicht;
   ansicht = neu;
   // Kamerabild nur in der Kamera-Ansicht zeigen; die Aufnahme an den Pi läuft unabhängig davon weiter
   $('video').srcObject = ansicht === 'kamera' ? kamera : null;
-  if (ansicht === 'kamera' && alt !== 'kamera') {   // neu in der Kamera-Ansicht: Box wieder frei
-    bereichLoesen();
+  if (ansicht === 'kamera' && alt !== 'kamera') {   // neu in der Kamera-Ansicht: wieder bestaetigen
+    bildOk = false;
+    $('bildInfo').textContent = 'Ist die Probe gut zu sehen? Dann unten bestätigen.';
     $('bestaetigen').hidden = false; $('pruefStart').hidden = true;
     if (!kamera) kameraAn();
   }
@@ -358,7 +377,7 @@ function zeigeStatus(s) {
 }
 
 // =====================================================================
-// Verbindung zur Steuerung (C++-Hauptprogramm über server.py, WebSocket /steuerung)
+// Verbindung zur Steuerung (C++-Hauptprogramm, WebSocket /steuerung)
 // =====================================================================
 let ws = null;
 function verbindeSteuerung() {
@@ -439,6 +458,7 @@ function kameraAus() {
 
 function aufnahmeStart() {
   $('aufnahmeInfo').textContent = '';
+  if (!DATEN_SPEICHERN) return;   // nichts aufnehmen
   const mime = mimeTyp();
   if (!kamera || !mime) { $('aufnahmeInfo').textContent = 'ohne Video'; return; }
   endung = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
@@ -466,7 +486,7 @@ function aufnahmeStopp() {
 
 function verbindeStream(sitzung) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const sock = streamWs = new WebSocket(`${proto}://${location.host}/stream?session=${sitzung}&ext=${endung}&bereich=${bereichText()}`);
+  const sock = streamWs = new WebSocket(`${proto}://${location.host}/stream?session=${sitzung}&ext=${endung}&bereich=${bereichText()}&farbe=${farbe()}`);
   sock.onopen = () => warteschlange.forEach(sendeTeil);
   sock.onmessage = e => {   // Pi bestätigt: {seq, total}
     const ack = JSON.parse(e.data);
@@ -486,84 +506,46 @@ function sendeTeil(teil) {
 }
 
 
-// =====================================================================
-// Bildbereich: Box auf dem Kamerabild, Werte als Anteil des Bildes (0..1)
-// =====================================================================
-let bereich = { x: 0.25, y: 0.1, b: 0.5, h: 0.8 };
-let bereichFest = false;
-
-function bereichText() {
-  return [bereich.x, bereich.y, bereich.b, bereich.h].map(v => v.toFixed(3)).join(',');
-}
-
-function zeigeBox() {
-  const st = $('box').style;
-  st.left = bereich.x * 100 + '%'; st.top = bereich.y * 100 + '%';
-  st.width = bereich.b * 100 + '%'; st.height = bereich.h * 100 + '%';
-}
-
-function bereichLoesen() {
-  bereichFest = false;
-  $('box').classList.remove('fest');
-  $('boxInfo').textContent = 'Box auf die Probe ziehen (Ecken zum Vergrössern), dann bestätigen.';
-}
-
-// Ziehen mit Finger oder Maus: in der Box = verschieben, an einer Ecke = Grösse ändern
-let ziehen = null;
-$('box').addEventListener('pointerdown', e => {
-  if (bereichFest) return;
-  e.preventDefault();
-  $('box').setPointerCapture(e.pointerId);
-  ziehen = { ecke: e.target.dataset.ecke || '', x: e.clientX, y: e.clientY, start: { ...bereich } };
-});
-$('box').addEventListener('pointermove', e => {
-  if (!ziehen) return;
-  const r = $('bild').getBoundingClientRect();
-  const dx = (e.clientX - ziehen.x) / r.width, dy = (e.clientY - ziehen.y) / r.height;
-  const a = ziehen.start, MIN = 0.08;
-  let { x, y, b, h } = a;
-  if (!ziehen.ecke) {
-    x = Math.min(Math.max(0, a.x + dx), 1 - a.b);
-    y = Math.min(Math.max(0, a.y + dy), 1 - a.h);
-  } else {
-    if (ziehen.ecke[0] === 'l') { x = Math.min(Math.max(0, a.x + dx), a.x + a.b - MIN); b = a.x + a.b - x; }
-    else b = Math.min(Math.max(MIN, a.b + dx), 1 - a.x);
-    if (ziehen.ecke[1] === 'o') { y = Math.min(Math.max(0, a.y + dy), a.y + a.h - MIN); h = a.y + a.h - y; }
-    else h = Math.min(Math.max(MIN, a.h + dy), 1 - a.y);
-  }
-  bereich = { x, y, b, h };
-  zeigeBox();
-});
-['pointerup', 'pointercancel'].forEach(t => $('box').addEventListener(t, () => ziehen = null));
-zeigeBox();
+// Bildbereich: kein Zuschneiden mehr, immer das ganze Bild (Anteile 0..1: x,y,Breite,Hoehe)
+function bereichText() { return '0.000,0.000,1.000,1.000'; }
+let bildOk = false;   // bestaetigt, dass die Probe gut zu sehen ist
 
 // =====================================================================
 // Knöpfe
 // =====================================================================
 $('kameraAnsicht').onclick = () => {
   const p = probe();
-  if (!testName()) { $('testname').focus(); $('meldung').textContent = 'Bitte Testnamen eingeben'; return; }
-  if (!(p.L > 0 && p.b > 0 && p.d > 0)) { $('meldung').textContent = 'Bitte L, b und d eingeben'; return; }
+  // Alle Felder muessen ausgefuellt sein (Zahlen > 0), sonst nicht in die Kamera-Ansicht
+  const felder = { testname: 'Name des Tests', laenge: 'Länge L', breite: 'Breite b', dicke: 'Dicke d', maxDehnung: 'Max. Dehnung' };
+  const leer = Object.keys(felder).filter(id =>
+    id === 'testname' ? !testName() : !(parseFloat($(id).value) > 0));
+  Object.keys(felder).forEach(id => $(id).classList.toggle('fehlt', leer.includes(id)));
+  if (leer.length) {
+    $(leer[0]).focus();
+    $('meldung').textContent = 'Bitte ausfüllen: ' + leer.map(id => felder[id]).join(', ');
+    return;
+  }
   $('meldung').textContent = '';
   befehl('set name ' + testName().replace(/\s+/g, '_'));
   befehl(`set probe ${p.L} ${p.b} ${p.d}`);
   befehl('set modus zug');
   befehl('set maxweg ' + p.maxWegMm.toFixed(2));
+  befehl('set farbe ' + farbe());
   if (!kamera) kameraAn();   // direkt beim Tippen, sonst sperrt das iPhone die Kamera
   befehl('kamera');          // C++: BEREIT -> KAMERA, dann wechselt die Ansicht
 };
 $('zurueckEingabe').onclick = () => befehl('zurueck');   // C++: KAMERA -> BEREIT
 $('kameraKnopf').onclick = () => kamera ? kameraAus() : kameraAn();
+
 $('bestaetigen').onclick = () => {
-  bereichFest = true;
-  $('box').classList.add('fest');
-  $('boxInfo').textContent = 'Bereich festgelegt: ' + bereichText();
-  log('Bildbereich ' + bereichText());
+  bildOk = true;
+  $('bildInfo').textContent = 'Bestätigt: Probe gut sichtbar.';
+  log('Bild bestätigt');
   zeigeAnsicht();
 };
 
 $('pruefStart').onclick = () => {
-  if (!bereichFest) return;   // erst nach "Bereich bestätigen"
+  if (!bildOk) return;   // erst nach "Probe gut sichtbar"
   befehl('nullen');   // Kraft und Weg auf 0, die Probe ist eingespannt
   aufnahmeStart();
   befehl('start');           // C++: KAMERA -> PRUEFUNG
@@ -572,7 +554,15 @@ $('pruefStopp').onclick = () => befehl('stopp');
 $('export').onclick = () => befehl('export');
 $('quittieren').onclick = () => befehl('quittieren');   // C++: ENDE -> BEREIT
 
-['laenge', 'breite', 'dicke', 'maxDehnung', 'testname'].forEach(id => $(id).addEventListener('input', zeigeProbe));
+['laenge', 'breite', 'dicke', 'maxDehnung', 'testname'].forEach(id => $(id).addEventListener('input', () => {
+  $(id).classList.remove('fehlt');   // rote Markierung weg, sobald etwas eingegeben wird
+  zeigeProbe();
+}));
+$('farbeWahl').querySelectorAll('button').forEach(b => b.onclick = () => {
+  $('farbe').value = b.dataset.farbe;
+  zeigeFarbe();
+  zeigeProbe();
+});
 
 // =====================================================================
 // Demo ohne Pi: simuliert eine Zugprüfung
@@ -605,10 +595,47 @@ function demoBefehl(text) {
 // =====================================================================
 // Start der Seite
 // =====================================================================
-try { (JSON.parse(localStorage.getItem('probe')) || []).forEach(([id, v]) => $(id).value = v); } catch {}
 zeigeProbe();
+zeigeFarbe();
 zeigeStatus({ zustand: 'getrennt' });
+if (NUR_ANSICHT === 'alle') zeigeAlle();
 if (!NUR_ANSICHT) verbindeSteuerung();
+
+// Übersicht: alle Ansichten untereinander, mit Beispielwerten
+function zeigeAlle() {
+  document.body.classList.add('alle');
+  const namen = { eingabe: '1 · Eingabe (BEREIT)', kamera: '2 · Kamera (KAMERA)',
+                  messung: '3 · Test läuft (PRUEFUNG)', ende: '4 · Ende (ENDE)' };
+  const gesehen = new Set();
+  document.querySelectorAll('section[data-ansicht]').forEach(el => {
+    const a = el.dataset.ansicht.split(' ')[0];
+    if (gesehen.has(a)) return;
+    gesehen.add(a);
+    const t = document.createElement('div');
+    t.className = 'trenner'; t.textContent = 'Ansicht ' + namen[a];
+    el.before(t);
+  });
+  const t = document.createElement('div');
+  t.className = 'trenner'; t.textContent = 'Alle Knöpfe der unteren Leiste';
+  document.querySelector('.leiste').before(t);
+
+  // Beispiel-Messung wie im Demo-Modus
+  zustand = 'PRUEFUNG'; neueMessung();
+  const p = probe();
+  for (let weg = 0; weg <= p.maxWegMm * 0.5; weg += p.L * 0.002) {
+    const e = weg / p.L;
+    messwert(p.A * 60 * (1 - Math.exp(-e * 25)) * (e > 0.3 ? Math.max(0, 1 - (e - 0.3) * 8) : 1), weg);
+  }
+  zustand = 'getrennt';
+  $('laufName').textContent = testName() || 'Messung (aktuell)';
+  $('endeTitel').textContent = 'Ergebnis' + (testName() ? ' – ' + testName() : '');
+  $('maxSpannung').textContent = max.spannung.toFixed(2);
+  $('maxKraft').textContent = max.kraft.toFixed(1);
+  $('maxDehnungWert').textContent = max.dehnung.toFixed(2);
+  $('anzahl').textContent = messwerte.length;
+  $('ergebnis').textContent = `Max. Dehnung ${max.dehnung.toFixed(2)} % · Max. Spannung ${max.spannung.toFixed(2)} MPa`;
+  zeichne();
+}
 </script>
 </body>
 </html>
