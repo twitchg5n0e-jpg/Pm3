@@ -3,72 +3,612 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111418">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Prüfstand</title>
 <style>
-  /* TODO: dunkles Layout fuers Handy, Platz fuer die Statusleiste (env(safe-area-inset-top)) */
+  :root {
+    --bg: #111418; --karte: #1b2027; --rand: #2a313b; --text: #e8ecf1; --grau: #8b95a3;
+    --akzent: #3b9eff; --gruen: #2fbf71; --rot: #e5484d; --gelb: #f5a524;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.4 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; }
+  body {
+    padding: calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 12px)
+             calc(env(safe-area-inset-bottom) + 96px) calc(env(safe-area-inset-left) + 12px);
+    max-width: 600px; margin: 0 auto;
+  }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  h1 { font-size: 20px; margin: 0; }
+  .chip { font-size: 13px; padding: 4px 10px; border-radius: 99px; background: var(--rand); color: var(--grau); }
+  .chip.ok { background: rgba(47,191,113,.18); color: var(--gruen); }
+  .chip.laeuft { background: rgba(59,158,255,.18); color: var(--akzent); }
+  .chip.fehler { background: rgba(229,72,77,.18); color: var(--rot); }
+
+  .karte { background: var(--karte); border: 1px solid var(--rand); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+  .karte h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--grau); margin: 0 0 10px; }
+
+  label { display: block; font-size: 13px; color: var(--grau); }
+  input, select {
+    width: 100%; margin-top: 4px; padding: 12px; border-radius: 10px; border: 1px solid var(--rand);
+    background: var(--bg); color: var(--text); font-size: 17px; /* >=16px: iOS zoomt sonst beim Antippen */
+  }
+  input:focus { outline: 2px solid var(--akzent); border-color: transparent; }
+  .reihe { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .reihe2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .hinweis { font-size: 13px; color: var(--grau); margin: 8px 0 0; }
+
+  .werte { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .wert { background: var(--bg); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; gap: 4px; }
+  .wert span { display: block; font-size: 12px; color: var(--grau); }
+  .wert b { font-size: 22px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .wert.gross { grid-column: span 3; }
+  .wert.gross b { font-size: 34px; color: var(--akzent); }
+
+  canvas { width: 100%; height: 240px; display: block; touch-action: pan-y; }
+  #ergebnis { margin-top: 10px; font-weight: 600; }
+  #ergebnis:empty { display: none; }
+
+  button {
+    font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 14px; color: var(--text);
+    background: var(--rand); touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  }
+  button:active { filter: brightness(1.3); }
+  button:disabled { opacity: .35; }
+  [hidden] { display: none !important; }
+
+
+  /* Start/Stopp immer unten erreichbar (Daumen) */
+  .leiste {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 10px;
+    padding: 10px calc(env(safe-area-inset-right) + 12px) calc(env(safe-area-inset-bottom) + 10px) calc(env(safe-area-inset-left) + 12px);
+    background: rgba(17,20,24,.92); backdrop-filter: blur(8px); border-top: 1px solid var(--rand);
+  }
+  .leiste button { padding: 18px; font-size: 19px; }
+  #pruefStart { background: var(--gruen); color: #04130b; }
+  #pruefStopp { background: var(--rot); }
+  #export, #bestaetigen { background: var(--akzent); color: #04101f; }
+  .leiste:not(:has(button:not([hidden]))) { display: none; }
+
+  /* Schritt-Anzeige oben */
+  .schritte { display: flex; gap: 4px; margin-bottom: 12px; }
+  .schritte span { flex: 1; height: 4px; border-radius: 2px; background: var(--rand); }
+  .schritte span.an { background: var(--akzent); }
+
+
+  /* Kamerabild mit Auswahl-Box */
+  .bild { position: relative; overflow: hidden; border-radius: 10px; background: #000; touch-action: none; }
+  .bild video { width: 100%; display: block; min-height: 180px; }
+  .box { position: absolute; border: 2px solid var(--akzent); box-shadow: 0 0 0 9999px rgba(0,0,0,.55); cursor: move; }
+  .box i { position: absolute; width: 28px; height: 28px; margin: -14px; border-radius: 50%;
+    background: var(--akzent); border: 3px solid #fff; }
+  .box i[data-ecke="lo"] { left: 0; top: 0; }    .box i[data-ecke="ro"] { left: 100%; top: 0; }
+  .box i[data-ecke="lu"] { left: 0; top: 100%; } .box i[data-ecke="ru"] { left: 100%; top: 100%; }
+  .box.fest { border-color: var(--gruen); pointer-events: none; }
+  .box.fest i { display: none; }
+  .aufnahme { color: var(--rot); font-weight: 600; }
+
 </style>
 </head>
 <body>
-<h1>Prüfstand <span id="zustand">–</span></h1>
+<header>
+  <h1>Prüfstand</h1>
+  <span id="zustand" class="chip">getrennt</span>
+</header>
+<div class="schritte" id="schritte"><span></span><span></span><span></span><span></span></div>
 
-<!-- Live-Werte -->
-<div id="kraft">–</div>
-<div id="weg">–</div>
-<div id="spitze">–</div>
-<div id="position">–</div>
-<div id="ergebnis"></div>
+<!-- ===== Ansicht 1: Eingabe der Testdaten ===== -->
+<section class="karte" data-ansicht="eingabe">
+  <h2>Test</h2>
+  <label>Name des Tests
+    <input id="testname" type="text" placeholder="z.B. PLA_Probe_01" autocomplete="off" autocapitalize="off">
+  </label>
+  <div class="reihe" style="margin-top:10px">
+    <label>Länge L (mm)<input id="laenge" type="number" inputmode="decimal" min="0" step="0.1" value="50"></label>
+    <label>Breite b (mm)<input id="breite" type="number" inputmode="decimal" min="0" step="0.1" value="10"></label>
+    <label>Dicke d (mm)<input id="dicke" type="number" inputmode="decimal" min="0" step="0.01" value="2"></label>
+  </div>
+  <div class="reihe2">
+    <label>Max. Dehnung (%)<input id="maxDehnung" type="number" inputmode="decimal" min="0" step="1" value="40"></label>
+    <label>Belastung<input type="text" value="Zug" disabled></label>
+  </div>
+  <p class="hinweis">Querschnitt A = <b id="flaeche">20.00</b> mm² · Abbruch bei <b id="maxWegMm">20.0</b> mm Weg</p>
+  <p class="hinweis" style="margin-top:14px">Ist die Probe fest eingespannt?</p>
+  <button id="kameraAnsicht" style="width:100%; margin-top:8px">Kamera-Ansicht</button>
+  <p class="hinweis" id="meldung" style="color:var(--rot)"></p>
+</section>
 
-<!-- Taster -->
-<button id="pruefStart">Start</button>
-<button id="pruefStopp">Stopp</button>
-<button id="quittieren">Quittieren</button>
-<button id="referenz">Referenz</button>
-<button id="tara">Tara</button>
-<button id="kamera">Kamera an</button>
-<button id="zurueck">◀ 1 mm</button>
-<button id="vor">1 mm ▶</button>
-<button id="export">CSV auf USB-Stick</button>
+<!-- ===== Ansicht 2: Kamera ===== -->
+<section class="karte" data-ansicht="kamera">
+  <h2>Kamera</h2>
+  <div class="bild" id="bild">
+    <video id="video" autoplay muted playsinline></video>
+    <div class="box" id="box"><i data-ecke="lo"></i><i data-ecke="ro"></i><i data-ecke="lu"></i><i data-ecke="ru"></i></div>
+  </div>
+  <p class="hinweis" id="kameraInfo">Handy so hinstellen, dass die Probe im Bild ist.</p>
+  <p class="hinweis" id="boxInfo">Box auf die Probe ziehen (Ecken zum Vergrössern), dann bestätigen.</p>
+  <button id="kameraKnopf" style="width:100%; margin-top:10px">Kamera an</button>
+</section>
 
-<!-- Pruefparameter -->
-<details>
-  <summary>Prüfparameter</summary>
-  <!-- TODO: Modus (Zug/Druck), Geschwindigkeit mm/min, Maximalkraft N, Maximalweg mm, Bruch % -->
-  <button id="uebernehmen">Übernehmen</button>
-</details>
+<!-- ===== Ansicht 3: Test läuft ===== -->
+<section class="karte" data-ansicht="messung">
+  <h2 id="laufName">Messung (aktuell)</h2>
+  <p class="hinweis" id="aufnahmeInfo"></p>
+  <div class="werte">
+    <div class="wert gross"><span>Dehnung (%)</span><b id="dehnung">–</b></div>
+    <div class="wert"><span>Kraft (N)</span><b id="kraft">–</b></div>
+    <div class="wert"><span>Spannung (MPa)</span><b id="spannung">–</b></div>
+    <div class="wert"><span>Weg (mm)</span><b id="weg">–</b></div>
+  </div>
+</section>
 
-<div id="live">Auswertung: –</div>
-<ul id="log"></ul>
-<button id="nothalt">NOT-HALT</button>
+<!-- ===== Ansicht 4: Ende ===== -->
+<section class="karte" data-ansicht="ende">
+  <h2 id="endeTitel">Ergebnis</h2>
+  <div class="werte">
+    <div class="wert gross"><span>Max. Spannung (MPa)</span><b id="maxSpannung">–</b></div>
+    <div class="wert"><span>Max. Kraft (N)</span><b id="maxKraft">–</b></div>
+    <div class="wert"><span>Max. Dehnung (%)</span><b id="maxDehnungWert">–</b></div>
+    <div class="wert"><span>Messpunkte</span><b id="anzahl">–</b></div>
+  </div>
+  <div id="ergebnis"></div>
+</section>
+
+<!-- Diagramm: während und nach dem Test, zeichnet aus dem Array messwerte -->
+<section class="karte" data-ansicht="messung ende">
+  <h2>Spannung über Dehnung</h2>
+  <canvas id="diagramm"></canvas>
+</section>
+
+<nav class="leiste">
+  <button id="zurueckEingabe" data-ansicht="kamera">◀ Eingabe</button>
+  <button id="bestaetigen" data-ansicht="kamera">Bereich bestätigen</button>
+  <button id="pruefStart" data-ansicht="kamera">Test starten</button>
+  <button id="pruefStopp" data-ansicht="messung">Stopp</button>
+  <button id="export" data-ansicht="ende">CSV auf USB</button>
+  <button id="quittieren" data-ansicht="ende">Neuer Test</button>
+</nav>
 
 <script>
-// --- Steuerung: WebSocket /steuerung ---
+const $ = id => document.getElementById(id);
+const PARAM = new URLSearchParams(location.search);
+const DEMO = PARAM.has('demo');            // index.html?demo          -> ohne Pi testen
+const NUR_ANSICHT = PARAM.get('ansicht');  // index.html?ansicht=ende  -> eine Ansicht fest anzeigen
+
+// =====================================================================
+// Messwerte: aktueller Wert, Maximalwerte und alle Punkte des Tests
+// =====================================================================
+let aktuell = { zeit: 0, kraft: 0, weg: 0, dehnung: 0, spannung: 0 };  // letzter Messwert
+let max = { kraft: 0, dehnung: 0, spannung: 0 };                       // Maximalwerte des Tests
+let messwerte = [];   // alle Messpunkte des Tests: [{zeit s, kraft N, weg mm, dehnung %, spannung MPa}, ...]
+let testStart = 0;    // Zeitpunkt des Starts (ms)
+
+// --- Probe aus den Eingabefeldern ---
+function probe() {
+  const L = parseFloat($('laenge').value) || 0;
+  const b = parseFloat($('breite').value) || 0;
+  const d = parseFloat($('dicke').value) || 0;
+  const maxProzent = parseFloat($('maxDehnung').value) || 0;
+  return { L, b, d, A: b * d, maxProzent, maxWegMm: L * maxProzent / 100 };
+}
+function testName() { return $('testname').value.trim(); }
+
+function zeigeProbe() {
+  const p = probe();
+  $('flaeche').textContent = p.A.toFixed(2);
+  $('maxWegMm').textContent = p.maxWegMm.toFixed(1);
+  localStorage.setItem('probe', JSON.stringify(
+    ['testname', 'laenge', 'breite', 'dicke', 'maxDehnung'].map(id => [id, $(id).value])));
+}
+
+function neueMessung() {
+  aktuell = { zeit: 0, kraft: 0, weg: 0, dehnung: 0, spannung: 0 };
+  max = { kraft: 0, dehnung: 0, spannung: 0 };
+  messwerte = [];
+  testStart = Date.now();
+  $('ergebnis').textContent = '';
+  zeichne();
+}
+
+// Ein neuer Messwert von der Steuerung (Kraft in N, Weg in mm)
+function messwert(kraftN, wegMm) {
+  const p = probe();
+  aktuell = {
+    zeit: (Date.now() - testStart) / 1000,
+    kraft: kraftN,
+    weg: wegMm,
+    dehnung: p.L > 0 ? wegMm / p.L * 100 : 0,
+    spannung: p.A > 0 ? kraftN / p.A : 0,
+  };
+  max.kraft = Math.max(max.kraft, aktuell.kraft);
+  max.dehnung = Math.max(max.dehnung, aktuell.dehnung);
+  max.spannung = Math.max(max.spannung, aktuell.spannung);
+
+  $('dehnung').textContent = aktuell.dehnung.toFixed(2);
+  $('kraft').textContent = aktuell.kraft.toFixed(1);
+  $('spannung').textContent = aktuell.spannung.toFixed(2);
+  $('weg').textContent = aktuell.weg.toFixed(2);
+
+  // nur während des Tests ins Array -> Diagramm
+  if (zustand === 'PRUEFUNG') { messwerte.push(aktuell); zeichne(); }
+}
+
+// =====================================================================
+// Diagramm: liest die Punkte aus dem Array messwerte
+// =====================================================================
+function zeichne() {
+  const c = $('diagramm'), dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (!w) return;   // Diagramm ist gerade ausgeblendet
+  c.width = w * dpr; c.height = h * dpr;
+  const g = c.getContext('2d');
+  g.scale(dpr, dpr);
+  g.clearRect(0, 0, w, h);
+
+  const xWerte = messwerte.map(m => m.dehnung);
+  const yWerte = messwerte.map(m => m.spannung);
+
+  const links = 44, unten = 26, oben = 8, rechts = 16;
+  const bw = w - links - rechts, bh = h - oben - unten;
+  const xMax = Math.max(probe().maxProzent || 10, ...xWerte) || 10;
+  const yMax = Math.max(1, ...yWerte) * 1.1;
+  const x = v => links + v / xMax * bw;
+  const y = v => oben + bh - v / yMax * bh;
+
+  g.font = '11px system-ui'; g.fillStyle = '#8b95a3'; g.strokeStyle = '#2a313b'; g.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const yv = yMax * i / 4, xv = xMax * i / 4;
+    g.beginPath(); g.moveTo(links, y(yv)); g.lineTo(w - rechts, y(yv)); g.stroke();
+    g.textAlign = 'right'; g.fillText(yv.toFixed(yMax < 10 ? 1 : 0), links - 6, y(yv) + 4);
+    g.textAlign = 'center'; g.fillText(xv.toFixed(0) + '%', x(xv), h - 8);
+  }
+  g.save(); g.translate(10, oben + bh / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center';
+  g.fillText('MPa', 0, 0); g.restore();
+
+  if (xWerte.length > 1) {
+    g.strokeStyle = '#3b9eff'; g.lineWidth = 2; g.lineJoin = 'round';
+    g.beginPath();
+    for (let i = 0; i < xWerte.length; i++) {
+      if (i === 0) g.moveTo(x(xWerte[i]), y(yWerte[i]));
+      else g.lineTo(x(xWerte[i]), y(yWerte[i]));
+    }
+    g.stroke();
+  }
+}
+window.addEventListener('resize', zeichne);
+
+// =====================================================================
+// Ansichten: eingabe -> kamera -> messung -> ende
+// =====================================================================
+const ANSICHTEN = ['eingabe', 'kamera', 'messung', 'ende'];
+let zustand = 'getrennt';   // Zustand vom C++-Hauptprogramm
+let ansicht = '';
+
+// Die Ansicht folgt nur dem Zustand (case) der C++-Zustandsmaschine:
+//   BEREIT (und alles vor dem Test) -> eingabe
+//   KAMERA                          -> kamera
+//   PRUEFUNG                        -> messung
+//   ENDE, FEHLER                    -> ende
+function ansichtFuer(z) {
+  if (NUR_ANSICHT) return NUR_ANSICHT;
+  if (z === 'KAMERA') return 'kamera';
+  if (z === 'PRUEFUNG') return 'messung';
+  if (z === 'ENDE' || z === 'FEHLER') return 'ende';
+  return 'eingabe';   // getrennt, UNREFERENZIERT, REFERENZFAHRT, POSITIONIEREN, BEREIT
+}
+
+function zeigeAnsicht() {
+  const neu = ansichtFuer(zustand);
+  if (neu === 'ende') {
+    $('endeTitel').textContent = zustand === 'FEHLER' ? 'Fehler' : 'Ergebnis' + (testName() ? ' – ' + testName() : '');
+    $('maxSpannung').textContent = max.spannung.toFixed(2);
+    $('maxKraft').textContent = max.kraft.toFixed(1);
+    $('maxDehnungWert').textContent = max.dehnung.toFixed(2);
+    $('anzahl').textContent = messwerte.length;
+  }
+  if (neu === 'messung') $('laufName').textContent = testName() || 'Messung (aktuell)';
+  document.querySelectorAll('[data-ansicht]').forEach(el =>
+    el.hidden = !el.dataset.ansicht.split(' ').includes(neu));
+  // Start erst, wenn der Bildbereich bestätigt ist
+  if (neu === 'kamera') { $('bestaetigen').hidden = bereichFest; $('pruefStart').hidden = !bereichFest; }
+  if (neu === ansicht) return;
+  const alt = ansicht;
+  ansicht = neu;
+  // Kamerabild nur in der Kamera-Ansicht zeigen; die Aufnahme an den Pi läuft unabhängig davon weiter
+  $('video').srcObject = ansicht === 'kamera' ? kamera : null;
+  if (ansicht === 'kamera' && alt !== 'kamera') {   // neu in der Kamera-Ansicht: Box wieder frei
+    bereichLoesen();
+    $('bestaetigen').hidden = false; $('pruefStart').hidden = true;
+    if (!kamera) kameraAn();
+  }
+  const nr = ANSICHTEN.indexOf(ansicht);
+  [...$('schritte').children].forEach((el, i) => el.classList.toggle('an', i <= nr));
+  window.scrollTo(0, 0);
+  zeichne();   // Canvas hat erst nach dem Einblenden eine Grösse
+}
+
+function zeigeStatus(s) {
+  if (s.zustand && s.zustand !== zustand) {
+    const alt = zustand;
+    if (s.zustand === 'PRUEFUNG') neueMessung();
+    zustand = s.zustand;
+    if (alt === 'PRUEFUNG') {
+      aufnahmeStopp();
+      if (zustand === 'ENDE') $('ergebnis').textContent ||=
+        `Max. Dehnung ${max.dehnung.toFixed(2)} % · Max. Spannung ${max.spannung.toFixed(2)} MPa`;
+    }
+    if (alt === 'getrennt') log('Verbunden mit der Steuerung');
+  }
+  if (typeof s.kraft === 'number' && typeof s.weg === 'number') messwert(s.kraft, s.weg);
+
+  const chip = $('zustand');
+  chip.textContent = zustand;
+  chip.className = 'chip ' + ({ BEREIT: 'ok', KAMERA: 'ok', ENDE: 'ok', PRUEFUNG: 'laeuft', REFERENZFAHRT: 'laeuft',
+                                 POSITIONIEREN: 'laeuft', FEHLER: 'fehler' }[zustand] || '');
+
+  zeigeAnsicht();
+  $('kameraAnsicht').disabled = zustand !== 'BEREIT';
+  $('pruefStart').disabled = zustand !== 'KAMERA';
+  $('pruefStopp').disabled = zustand === 'getrennt';
+  $('quittieren').disabled = zustand !== 'ENDE' && zustand !== 'FEHLER';
+  $('export').disabled = zustand !== 'ENDE' || messwerte.length === 0;
+}
+
+// =====================================================================
+// Verbindung zur Steuerung (C++-Hauptprogramm über server.py, WebSocket /steuerung)
+// =====================================================================
+let ws = null;
 function verbindeSteuerung() {
-  // TODO: WebSocket oeffnen, bei Abbruch neu verbinden
+  if (DEMO) { zeigeStatus({ zustand: 'BEREIT' }); return; }
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/steuerung');
+  ws.onmessage = e => {
+    let d; try { d = JSON.parse(e.data); } catch { log(e.data); return; }
+    if (d.ereignis) log(d.ereignis);
+    if (d.ergebnis) $('ergebnis').textContent = d.ergebnis;
+    zeigeStatus(d);
+  };
+  ws.onclose = () => {
+    zeigeStatus({ zustand: 'getrennt' });
+    setTimeout(verbindeSteuerung, 2000);
+  };
 }
 
 function befehl(text) {
-  // TODO: Befehl an die Steuerung schicken (z.B. "start", "set maxkraft 500")
+  log('→ ' + text);
+  if (DEMO) return demoBefehl(text);
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(text);
+  else log('nicht verbunden');
 }
 
-function zeigeStatus(status) {
-  // TODO: Live-Werte und Zustand anzeigen, Taster je nach Zustand sperren/freigeben
+function log(text) {   // nur in der Browser-Konsole
+  console.log(new Date().toLocaleTimeString('de-CH') + '  ' + text);
 }
 
-function log(text) {
-  // TODO: Zeile mit Uhrzeit oben in den Testverlauf einfuegen
+// =====================================================================
+// Kamera: Vorschau ab "Kamera an", Aufnahme an den Pi (/stream) während des Tests
+// =====================================================================
+const WIDTH = 1920, HEIGHT = 1080, FPS = 30;
+const BITRATE = 8_000_000;   // 8 Mbit/s
+const CHUNK_MS = 1000;       // jede Sekunde ein Teil
+
+let kamera = null;           // MediaStream der Kamera
+let recorder = null, streamWs = null, wakeLock = null;
+let teilNr = 0, warteschlange = [], bytes = 0, endung = 'webm';
+
+function mimeTyp() {
+  const typen = ['video/webm;codecs=h264', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8',
+                 'video/webm', 'video/mp4;codecs=avc1', 'video/mp4'];
+  return window.MediaRecorder && typen.find(m => MediaRecorder.isTypeSupported(m));
 }
 
-// --- Kamera: Aufnahme an den Pi (/stream), Live-Bild per WebRTC (/offer) ---
-async function kameraStart() {
-  // TODO: getUserMedia 1920x1080, MediaRecorder, Teile per WebSocket senden, Live-Bild starten
+let kameraStartet = false;   // getUserMedia läuft gerade
+async function kameraAn() {
+  if (kamera || kameraStartet) return;
+  kameraStartet = true;
+  try {
+    kamera = await navigator.mediaDevices.getUserMedia({ audio: false,
+      video: { facingMode: 'environment', width: { ideal: WIDTH }, height: { ideal: HEIGHT }, frameRate: { ideal: FPS } } });
+  } catch (e) {
+    kameraStartet = false;
+    log('Kamera nicht erlaubt: ' + e.message);
+    $('kameraInfo').textContent = 'Kamera nicht verfügbar – Test geht auch ohne Video.';
+    return;
+  }
+  kameraStartet = false;
+  const track = kamera.getVideoTracks()[0];
+  const st = track.getSettings();
+  track.onended = () => { log('Kamera wurde beendet'); kameraAus(); };
+  if (ansicht === 'kamera') $('video').srcObject = kamera;
+  $('kameraInfo').textContent = `Kamera an: ${st.width}×${st.height}, ${Math.round(st.frameRate || FPS)} Bilder/s`;
+  $('kameraKnopf').textContent = 'Kamera aus';
+  try { wakeLock = await navigator.wakeLock?.request('screen'); } catch {}
 }
 
-function kameraStopp() {
-  // TODO
+function kameraAus() {
+  aufnahmeStopp();
+  kamera?.getTracks().forEach(t => t.stop());
+  kamera = null;
+  $('video').srcObject = null;
+  $('kameraInfo').textContent = 'Kamera aus.';
+  $('kameraKnopf').textContent = 'Kamera an';
+  wakeLock?.release(); wakeLock = null;
 }
 
-// TODO: Taster mit befehl(...) verbinden, Start startet auch die Kamera, export -> befehl('export')
-verbindeSteuerung();
+function aufnahmeStart() {
+  $('aufnahmeInfo').textContent = '';
+  const mime = mimeTyp();
+  if (!kamera || !mime) { $('aufnahmeInfo').textContent = 'ohne Video'; return; }
+  endung = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+  const sitzung = (testName() || 'test').replace(/\s+/g, '_') + '_' + new Date().toISOString().replace(/[:.]/g, '-');
+  teilNr = 0; warteschlange = []; bytes = 0;
+  recorder = new MediaRecorder(kamera, { mimeType: mime, videoBitsPerSecond: BITRATE });
+  recorder.ondataavailable = e => {
+    if (!e.data.size) return;
+    const teil = { nr: ++teilNr, daten: e.data };
+    warteschlange.push(teil);
+    bytes += e.data.size;
+    sendeTeil(teil);
+    $('aufnahmeInfo').innerHTML = `<span class="aufnahme">● Aufnahme</span> ${(bytes / 1e6).toFixed(1)} MB`;
+  };
+  recorder.start(CHUNK_MS);
+  if (!DEMO) verbindeStream(sitzung);
+  log('Aufnahme ' + sitzung + ' gestartet');
+}
+
+function aufnahmeStopp() {
+  if (!recorder || recorder.state === 'inactive') return;
+  recorder.stop();   // letztes Teil kommt noch über ondataavailable
+  log(`Aufnahme gestoppt (${(bytes / 1e6).toFixed(1)} MB)`);
+}
+
+function verbindeStream(sitzung) {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const sock = streamWs = new WebSocket(`${proto}://${location.host}/stream?session=${sitzung}&ext=${endung}&bereich=${bereichText()}`);
+  sock.onopen = () => warteschlange.forEach(sendeTeil);
+  sock.onmessage = e => {   // Pi bestätigt: {seq, total}
+    const ack = JSON.parse(e.data);
+    warteschlange = warteschlange.filter(t => t.nr > ack.seq);
+  };
+  sock.onclose = () => {
+    if (sock !== streamWs) return;
+    if (recorder?.state !== 'inactive' || warteschlange.length) setTimeout(() => verbindeStream(sitzung), 2000);
+  };
+}
+
+function sendeTeil(teil) {
+  if (!streamWs || streamWs.readyState !== WebSocket.OPEN) return;
+  const kopf = new DataView(new ArrayBuffer(4));
+  kopf.setUint32(0, teil.nr);
+  streamWs.send(new Blob([kopf.buffer, teil.daten]));
+}
+
+
+// =====================================================================
+// Bildbereich: Box auf dem Kamerabild, Werte als Anteil des Bildes (0..1)
+// =====================================================================
+let bereich = { x: 0.25, y: 0.1, b: 0.5, h: 0.8 };
+let bereichFest = false;
+
+function bereichText() {
+  return [bereich.x, bereich.y, bereich.b, bereich.h].map(v => v.toFixed(3)).join(',');
+}
+
+function zeigeBox() {
+  const st = $('box').style;
+  st.left = bereich.x * 100 + '%'; st.top = bereich.y * 100 + '%';
+  st.width = bereich.b * 100 + '%'; st.height = bereich.h * 100 + '%';
+}
+
+function bereichLoesen() {
+  bereichFest = false;
+  $('box').classList.remove('fest');
+  $('boxInfo').textContent = 'Box auf die Probe ziehen (Ecken zum Vergrössern), dann bestätigen.';
+}
+
+// Ziehen mit Finger oder Maus: in der Box = verschieben, an einer Ecke = Grösse ändern
+let ziehen = null;
+$('box').addEventListener('pointerdown', e => {
+  if (bereichFest) return;
+  e.preventDefault();
+  $('box').setPointerCapture(e.pointerId);
+  ziehen = { ecke: e.target.dataset.ecke || '', x: e.clientX, y: e.clientY, start: { ...bereich } };
+});
+$('box').addEventListener('pointermove', e => {
+  if (!ziehen) return;
+  const r = $('bild').getBoundingClientRect();
+  const dx = (e.clientX - ziehen.x) / r.width, dy = (e.clientY - ziehen.y) / r.height;
+  const a = ziehen.start, MIN = 0.08;
+  let { x, y, b, h } = a;
+  if (!ziehen.ecke) {
+    x = Math.min(Math.max(0, a.x + dx), 1 - a.b);
+    y = Math.min(Math.max(0, a.y + dy), 1 - a.h);
+  } else {
+    if (ziehen.ecke[0] === 'l') { x = Math.min(Math.max(0, a.x + dx), a.x + a.b - MIN); b = a.x + a.b - x; }
+    else b = Math.min(Math.max(MIN, a.b + dx), 1 - a.x);
+    if (ziehen.ecke[1] === 'o') { y = Math.min(Math.max(0, a.y + dy), a.y + a.h - MIN); h = a.y + a.h - y; }
+    else h = Math.min(Math.max(MIN, a.h + dy), 1 - a.y);
+  }
+  bereich = { x, y, b, h };
+  zeigeBox();
+});
+['pointerup', 'pointercancel'].forEach(t => $('box').addEventListener(t, () => ziehen = null));
+zeigeBox();
+
+// =====================================================================
+// Knöpfe
+// =====================================================================
+$('kameraAnsicht').onclick = () => {
+  const p = probe();
+  if (!testName()) { $('testname').focus(); $('meldung').textContent = 'Bitte Testnamen eingeben'; return; }
+  if (!(p.L > 0 && p.b > 0 && p.d > 0)) { $('meldung').textContent = 'Bitte L, b und d eingeben'; return; }
+  $('meldung').textContent = '';
+  befehl('set name ' + testName().replace(/\s+/g, '_'));
+  befehl(`set probe ${p.L} ${p.b} ${p.d}`);
+  befehl('set modus zug');
+  befehl('set maxweg ' + p.maxWegMm.toFixed(2));
+  if (!kamera) kameraAn();   // direkt beim Tippen, sonst sperrt das iPhone die Kamera
+  befehl('kamera');          // C++: BEREIT -> KAMERA, dann wechselt die Ansicht
+};
+$('zurueckEingabe').onclick = () => befehl('zurueck');   // C++: KAMERA -> BEREIT
+$('kameraKnopf').onclick = () => kamera ? kameraAus() : kameraAn();
+$('bestaetigen').onclick = () => {
+  bereichFest = true;
+  $('box').classList.add('fest');
+  $('boxInfo').textContent = 'Bereich festgelegt: ' + bereichText();
+  log('Bildbereich ' + bereichText());
+  zeigeAnsicht();
+};
+
+$('pruefStart').onclick = () => {
+  if (!bereichFest) return;   // erst nach "Bereich bestätigen"
+  befehl('nullen');   // Kraft und Weg auf 0, die Probe ist eingespannt
+  aufnahmeStart();
+  befehl('start');           // C++: KAMERA -> PRUEFUNG
+};
+$('pruefStopp').onclick = () => befehl('stopp');
+$('export').onclick = () => befehl('export');
+$('quittieren').onclick = () => befehl('quittieren');   // C++: ENDE -> BEREIT
+
+['laenge', 'breite', 'dicke', 'maxDehnung', 'testname'].forEach(id => $(id).addEventListener('input', zeigeProbe));
+
+// =====================================================================
+// Demo ohne Pi: simuliert eine Zugprüfung
+// =====================================================================
+let demoTimer = null;
+function demoBefehl(text) {
+  if (text === 'kamera' && zustand === 'BEREIT') {
+    zeigeStatus({ zustand: 'KAMERA' });
+  } else if (text === 'zurueck' && zustand === 'KAMERA') {
+    zeigeStatus({ zustand: 'BEREIT' });
+  } else if (text === 'start' && zustand === 'KAMERA') {
+    zeigeStatus({ zustand: 'PRUEFUNG', kraft: 0, weg: 0 });
+    let weg = 0;
+    const p = probe();
+    demoTimer = setInterval(() => {
+      weg += p.L * 0.002;
+      const e = weg / p.L;
+      const kraft = p.A * 60 * (1 - Math.exp(-e * 25)) * (e > 0.3 ? Math.max(0, 1 - (e - 0.3) * 8) : 1);
+      zeigeStatus({ zustand: 'PRUEFUNG', kraft, weg });
+      if (weg >= p.maxWegMm || (e > 0.3 && kraft < max.kraft * 0.5)) demoBefehl('stopp');
+    }, 50);
+  } else if (text === 'stopp') {
+    clearInterval(demoTimer);
+    zeigeStatus({ zustand: 'ENDE' });
+  } else if (text === 'quittieren') {
+    zeigeStatus({ zustand: 'BEREIT' });
+  }
+}
+
+// =====================================================================
+// Start der Seite
+// =====================================================================
+try { (JSON.parse(localStorage.getItem('probe')) || []).forEach(([id, v]) => $(id).value = v); } catch {}
+zeigeProbe();
+zeigeStatus({ zustand: 'getrennt' });
+if (!NUR_ANSICHT) verbindeSteuerung();
 </script>
 </body>
 </html>
