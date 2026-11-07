@@ -22,6 +22,9 @@ fi
 ips=$(hostname -I 2>/dev/null || ip -4 -o addr show | awk '{split($4,a,"/"); print a[1]}')
 san="DNS:localhost,DNS:$(hostname).local,IP:127.0.0.1"
 for ip in $ips; do [[ $ip == *:* ]] || san+=",IP:$ip"; done
+# iPhone-Hotspot ueber USB: das iPhone vergibt 172.20.10.2-14. Immer aufnehmen, weil der Pi beim
+# Einschalten oft startet, bevor das iPhone verbunden ist.
+for n in $(seq 2 14); do [[ ,$san, == *,IP:172.20.10.$n,* ]] || san+=",IP:172.20.10.$n"; done
 if [[ ! -f server.crt || "$(cat server.san 2>/dev/null)" != "$san" ]]; then
   openssl ecparam -name prime256v1 -genkey -noout -out server.key
   openssl req -new -key server.key -subj "/CN=Pruefstand" -out server.csr

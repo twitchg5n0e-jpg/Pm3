@@ -4,6 +4,7 @@
 //
 //   HTTP  (config::HTTP_PORT)   Handy-Seite und /ca.crt (CA-Zertifikat zum Installieren)
 //   HTTPS (config::HTTPS_PORT)  Handy-Seite; nur ueber HTTPS gibt das Handy die Kamera frei
+//   GET /csv?name=<Test>        CSV eines Tests zum Herunterladen (config::ORDNER_MESSUNGEN)
 //
 //   WebSocket /steuerung   Handy -> Pruefstand: Befehle als Text  -> beiBefehl()
 //                          Pruefstand -> Handy: JSON              <- anAlle()

@@ -115,12 +115,29 @@ void Webserver::anfrage(mg_connection* c, mg_http_message* hm) {
     } else if (ist(hm, "/stream")) {
         if (config::DATEN_SPEICHERN) videoOeffnen(c, hm);
         else mg_http_reply(c, 403, "", "Aufnahme ausgeschaltet\n");
+    } else if (ist(hm, "/csv")) {
+        // /csv?name=<Testname>: CSV des Tests zum Herunterladen aufs Handy
+        const std::string name = sichererName(urlWert(hm, "name"));
+        const std::string datei = std::string(config::ORDNER_MESSUNGEN) + "/" + name + ".csv";
+        if (!fs::exists(datei)) return mg_http_reply(c, 404, "", "Keine CSV fuer %s\n", name.c_str());
+        const std::string kopf = "Content-Disposition: attachment; filename=\"" + name + ".csv\"\r\n"
+                                 "Cache-Control: no-cache\r\n";
+        mg_http_serve_opts opts{};
+        opts.mime_types = "csv=text/csv";
+        opts.extra_headers = kopf.c_str();
+        mg_http_serve_file(c, hm, datei.c_str(), &opts);
     } else if (ist(hm, "/ca.crt")) {
         mg_http_serve_opts opts{};
         opts.mime_types = "crt=application/x-x509-ca-cert";   // damit das Handy es installiert
         mg_http_serve_file(c, hm, config::DATEI_CA, &opts);
     } else if (ist(hm, "/")) {
-        mg_http_reply(c, 302, "Location: /index.html\r\n", "");
+        // HTTPS: direkt zur Bedienseite. HTTP: zuerst die Verbinden-Seite, die prueft, ob das Handy
+        // dem Zertifikat schon vertraut, und dann auf HTTPS weiterleitet (Kamera geht nur mit HTTPS).
+        if (c->is_tls) mg_http_reply(c, 302, "Location: /index.html\r\n", "");
+        else {
+            const std::string ziel = "Location: /verbinden.html?https=" + std::to_string(config::HTTPS_PORT) + "\r\n";
+            mg_http_reply(c, 302, ziel.c_str(), "");
+        }
     } else {
         mg_http_serve_opts opts{};
         opts.root_dir = config::ORDNER_SEITEN;

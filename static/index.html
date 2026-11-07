@@ -70,7 +70,7 @@
   .leiste button { padding: 18px; font-size: 19px; }
   #pruefStart { background: var(--gruen); color: #04130b; }
   #pruefStopp { background: var(--rot); }
-  #export, #bestaetigen { background: var(--akzent); color: #04101f; }
+  #export, #csvHandy, #bestaetigen { background: var(--akzent); color: #04101f; }
 
   /* Reiter: Farbe der Probe */
   .reiter { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px; padding: 4px;
@@ -98,6 +98,12 @@
   .bild { position: relative; overflow: hidden; border-radius: 10px; background: #000; }
   .bild video { width: 100%; display: block; min-height: 180px; }
   .aufnahme { color: var(--rot); font-weight: 600; }
+  .knoepfe { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; margin-top: 10px; }
+  #lichtKnopf.an { background: var(--gelb); color: #1f1400; }
+
+  /* Hinweis, solange keine Verbindung zum Pi besteht */
+  #getrennt { border-color: var(--rot); }
+  #getrennt p { margin: 0; }
 
 </style>
 </head>
@@ -107,6 +113,11 @@
   <span id="zustand" class="chip">getrennt</span>
 </header>
 <div class="schritte" id="schritte"><span></span><span></span><span></span><span></span></div>
+
+<section class="karte" id="getrennt" hidden>
+  <p><b>Keine Verbindung zum Prüfstand.</b></p>
+  <p class="hinweis">Hängt das Handy am Kabel und ist der persönliche Hotspot an? Die Seite verbindet sich von selbst wieder.</p>
+</section>
 
 <!-- ===== Ansicht 1: Eingabe der Testdaten ===== -->
 <section class="karte" data-ansicht="eingabe">
@@ -140,7 +151,10 @@
   </div>
   <p class="hinweis" id="kameraInfo">Handy so hinstellen, dass die Probe im Bild ist.</p>
   <p class="hinweis" id="bildInfo">Ist die Probe gut zu sehen? Dann unten bestätigen.</p>
-  <button id="kameraKnopf" style="width:100%; margin-top:10px">Kamera an</button>
+  <div class="knoepfe">
+    <button id="kameraKnopf">Kamera an</button>
+    <button id="lichtKnopf" hidden>Licht</button>
+  </div>
 </section>
 
 <!-- ===== Ansicht 3: Test läuft ===== -->
@@ -179,6 +193,7 @@
   <button id="pruefStart" data-ansicht="kamera">Test starten</button>
   <button id="pruefStopp" data-ansicht="messung">Stopp</button>
   <button id="export" data-ansicht="ende">CSV auf USB</button>
+  <button id="csvHandy" data-ansicht="ende">CSV aufs Handy</button>
   <button id="quittieren" data-ansicht="ende">Neuer Test</button>
 </nav>
 
@@ -329,7 +344,7 @@ function zeigeAnsicht() {
   if (neu === 'messung') $('laufName').textContent = testName() || 'Messung (aktuell)';
   document.querySelectorAll('[data-ansicht]').forEach(el =>
     el.hidden = neu !== 'alle' && !el.dataset.ansicht.split(' ').includes(neu));
-  if (!DATEN_SPEICHERN) $('export').hidden = true;   // Export ausgeschaltet
+  if (!DATEN_SPEICHERN) $('export').hidden = $('csvHandy').hidden = true;   // nichts gespeichert
   // Start erst, wenn bestaetigt ist, dass die Probe gut zu sehen ist
   if (neu === 'kamera') { $('bestaetigen').hidden = bildOk; $('pruefStart').hidden = !bildOk; }
   if (neu === ansicht) return;
@@ -342,6 +357,7 @@ function zeigeAnsicht() {
     $('bildInfo').textContent = 'Ist die Probe gut zu sehen? Dann unten bestätigen.';
     $('bestaetigen').hidden = false; $('pruefStart').hidden = true;
     if (!kamera) kameraAn();
+    else lichtSchalten(licht);   // Kamera läuft noch vom letzten Test: Licht wie gewünscht
   }
   const nr = ANSICHTEN.indexOf(ansicht);
   [...$('schritte').children].forEach((el, i) => el.classList.toggle('an', i <= nr));
@@ -356,6 +372,7 @@ function zeigeStatus(s) {
     zustand = s.zustand;
     if (alt === 'PRUEFUNG') {
       aufnahmeStopp();
+      lichtSchalten(false);   // Test fertig: Licht aus (beim nächsten Test wieder an)
       if (zustand === 'ENDE') $('ergebnis').textContent ||=
         `Max. Dehnung ${max.dehnung.toFixed(2)} % · Max. Spannung ${max.spannung.toFixed(2)} MPa`;
     }
@@ -369,11 +386,13 @@ function zeigeStatus(s) {
                                  POSITIONIEREN: 'laeuft', FEHLER: 'fehler' }[zustand] || '');
 
   zeigeAnsicht();
+  $('getrennt').hidden = zustand !== 'getrennt' || DEMO || !!NUR_ANSICHT;
   $('kameraAnsicht').disabled = zustand !== 'BEREIT';
   $('pruefStart').disabled = zustand !== 'KAMERA';
   $('pruefStopp').disabled = zustand === 'getrennt';
   $('quittieren').disabled = zustand !== 'ENDE' && zustand !== 'FEHLER';
   $('export').disabled = zustand !== 'ENDE' || messwerte.length === 0;
+  $('csvHandy').disabled = zustand !== 'ENDE';
 }
 
 // =====================================================================
@@ -443,8 +462,28 @@ async function kameraAn() {
   if (ansicht === 'kamera') $('video').srcObject = kamera;
   $('kameraInfo').textContent = `Kamera an: ${st.width}×${st.height}, ${Math.round(st.frameRate || FPS)} Bilder/s`;
   $('kameraKnopf').textContent = 'Kamera aus';
+  $('lichtKnopf').hidden = !lichtMoeglich();
+  if (lichtMoeglich()) setzeLicht(licht);
+  else $('kameraInfo').textContent += ' · Licht: von diesem Browser nicht unterstützt';
   try { wakeLock = await navigator.wakeLock?.request('screen'); } catch {}
 }
+
+// Licht (Taschenlampe) des Handys: geht mit der Kamera an, Knopf schaltet um,
+// nach dem Test geht es aus. licht = Wunsch des Benutzers für die Kamera-Ansicht.
+let licht = true;
+function lichtMoeglich() {
+  const track = kamera?.getVideoTracks()[0];
+  return !!track?.getCapabilities?.().torch;
+}
+async function lichtSchalten(an) {   // schaltet nur das Licht, ändert den Wunsch nicht
+  const track = kamera?.getVideoTracks()[0];
+  if (!track || !lichtMoeglich()) return;
+  try { await track.applyConstraints({ advanced: [{ torch: an }] }); }
+  catch (e) { log('Licht: ' + e.message); }
+  $('lichtKnopf').textContent = an ? 'Licht aus' : 'Licht an';
+  $('lichtKnopf').classList.toggle('an', an);
+}
+function setzeLicht(an) { licht = an; lichtSchalten(an); }   // Knopf: Wunsch merken und schalten
 
 function kameraAus() {
   aufnahmeStopp();
@@ -453,6 +492,7 @@ function kameraAus() {
   $('video').srcObject = null;
   $('kameraInfo').textContent = 'Kamera aus.';
   $('kameraKnopf').textContent = 'Kamera an';
+  $('lichtKnopf').hidden = true;   // Licht geht mit der Kamera aus
   wakeLock?.release(); wakeLock = null;
 }
 
@@ -536,6 +576,7 @@ $('kameraAnsicht').onclick = () => {
 };
 $('zurueckEingabe').onclick = () => befehl('zurueck');   // C++: KAMERA -> BEREIT
 $('kameraKnopf').onclick = () => kamera ? kameraAus() : kameraAn();
+$('lichtKnopf').onclick = () => setzeLicht(!licht);
 
 $('bestaetigen').onclick = () => {
   bildOk = true;
@@ -552,6 +593,10 @@ $('pruefStart').onclick = () => {
 };
 $('pruefStopp').onclick = () => befehl('stopp');
 $('export').onclick = () => befehl('export');
+// Gleicher Name wie bei "set name" (der Pi speichert die CSV unter diesem Namen)
+$('csvHandy').onclick = () => {
+  location.href = '/csv?name=' + encodeURIComponent(testName().replace(/\s+/g, '_'));
+};
 $('quittieren').onclick = () => befehl('quittieren');   // C++: ENDE -> BEREIT
 
 ['laenge', 'breite', 'dicke', 'maxDehnung', 'testname'].forEach(id => $(id).addEventListener('input', () => {
