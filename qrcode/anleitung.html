@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Prüfstand – Handy verbinden</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Inter", "Helvetica Neue", Arial, sans-serif; color: #111; margin: 0; font-size: 10pt; line-height: 1.35; }
+  h1 { font-size: 22pt; margin: 0 0 2mm; }
+  .unter { color: #555; margin: 0 0 6mm; }
+  .spalten { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; }
+  .karte { border: 1.5pt solid #111; border-radius: 4mm; padding: 6mm; }
+  h2 { font-size: 16pt; margin: 0 0 4mm; display: flex; align-items: center; gap: 3mm; }
+  .qr { text-align: center; margin: 2mm 0 4mm; }
+  .qr img { width: 40mm; height: 40mm; }
+  .adresse { font-family: "DejaVu Sans Mono", monospace; font-size: 12pt; font-weight: 700; display: block; margin-top: 1mm; }
+  ol { padding-left: 5mm; margin: 0; }
+  li { margin-bottom: 2.5mm; }
+  .einmal { margin-top: 4mm; padding-top: 3mm; border-top: 1pt dashed #999; }
+  .einmal h3 { font-size: 11pt; margin: 0 0 2mm; }
+  .einmal ol { font-size: 10pt; }
+  b { font-weight: 700; }
+  .fuss { margin-top: 6mm; font-size: 9.5pt; color: #444; }
+  .fuss li { margin-bottom: 1mm; }
+</style>
+</head>
+<body>
+<h1>Prüfstand – Handy verbinden</h1>
+<p class="unter">Das Handy ist Bildschirm und Kamera des Prüfstands. Es wird per USB-Kabel angeschlossen, WLAN oder Internet braucht es nicht.</p>
+
+<div class="spalten">
+
+  <section class="karte">
+    <h2>iPhone</h2>
+    <ol>
+      <li>iPhone mit dem <b>USB-Kabel</b> am Prüfstand anschliessen.</li>
+      <li><b>Einstellungen → Persönlicher Hotspot</b> → „Zugriff für andere erlauben“ einschalten.</li>
+      <li>Fragt das iPhone <b>„Diesem Computer vertrauen?“</b> → <b>Vertrauen</b>.</li>
+      <li>QR-Code mit der <b>Kamera-App</b> scannen und den Link öffnen (in <b>Safari</b>).</li>
+    </ol>
+    <div class="qr">
+      <img src="pruefstand-qr-iphone.svg" alt="QR-Code http://172.20.10.14">
+      <span class="adresse">172.20.10.14</span>
+    </div>
+    <div class="einmal">
+      <h3>Nur beim ersten Mal: Zertifikat</h3>
+      <ol>
+        <li>Auf der Seite <b>„Zertifikat laden“</b> → <b>Erlauben</b>.</li>
+        <li><b>Einstellungen → Allgemein → VPN und Geräteverwaltung → Pruefstand CA → Installieren</b>.</li>
+        <li><b>Einstellungen → Allgemein → Info → Zertifikatsvertrauens­einstellungen</b> → <b>Pruefstand CA</b> einschalten.</li>
+        <li>Zurück zu Safari – es geht von selbst weiter.</li>
+        <li>Tipp: <b>Teilen → Zum Home-Bildschirm</b>, dann reicht später ein Tippen.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="karte">
+    <h2>Android</h2>
+    <ol>
+      <li>Handy mit dem <b>USB-Kabel</b> am Prüfstand anschliessen.</li>
+      <li><b>Einstellungen → Netzwerk &amp; Internet → Hotspot &amp; Tethering → USB-Tethering</b> einschalten.<br>
+          <small>(Je nach Hersteller z.B. „Verbindungen → Mobile Hotspot und Tethering“.)</small></li>
+      <li>QR-Code mit der <b>Kamera</b> scannen und den Link in <b>Chrome</b> öffnen.</li>
+    </ol>
+    <div class="qr">
+      <img src="pruefstand-qr-android.svg" alt="QR-Code http://pruefstand.local">
+      <span class="adresse">pruefstand.local</span>
+    </div>
+    <div class="einmal">
+      <h3>Nur beim ersten Mal: Zertifikat</h3>
+      <ol>
+        <li>Auf der Seite <b>„Zertifikat laden“</b> antippen.</li>
+        <li><b>Einstellungen → Sicherheit → Verschlüsselung &amp; Anmeldedaten → Zertifikat installieren → CA-Zertifikat</b> → geladene Datei wählen.</li>
+        <li>Zurück zu Chrome – es geht von selbst weiter.</li>
+        <li>Tipp: <b>⋮ → Zum Startbildschirm hinzufügen</b>, dann reicht später ein Tippen.</li>
+      </ol>
+    </div>
+  </section>
+
+</div>
+
+<div class="fuss">
+  <b>Geht nicht?</b>
+  <ul>
+    <li>Ist der Prüfstand eingeschaltet? Nach dem Einschalten ca. 1 Minute warten.</li>
+    <li>USB-Kabel ab- und wieder anstecken, Hotspot bzw. USB-Tethering aus- und wieder einschalten.</li>
+  </ul>
+</div>
+</body>
+</html>
