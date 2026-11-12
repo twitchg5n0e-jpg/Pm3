@@ -7,3 +7,7 @@ daten/
 steuerung/kalibrierung.conf
 # Enthält den geheimen Schlüssel der eigenen Zertifizierungsstelle
 zertifikat/
+# Lokale Zertifikate und private Schlüssel, nie ins Repository
+key.pem
+cert.pem
+*.pfx

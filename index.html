@@ -1,0 +1,135 @@
+<!--
+    iPhone-Kamera-Stream: Webseite, die in Safari auf dem iPhone läuft.
+
+    Ablauf:
+    1. Kamera holen (getUserMedia) und im Video-Feld anzeigen.
+    2. Eine WebSocket-Leitung zum Python-Server öffnen.
+    3. Regelmässig (FPS) einen Ausschnitt aus dem Videobild als JPEG schicken.
+       Vor jedem Bild wird die Lage des Ausschnitts als JSON mitgeschickt.
+    4. Python antwortet mit einem Rahmen um die 4 ArUco-Marker.
+       Dieser Rahmen wird ab dem nächsten Bild als Ausschnitt benutzt.
+-->
+
+<h1>Hello, this is the start page!</h1>
+<p>das ist ein Absatz!</p>
+<p id="info">Warte auf Marker...</p>
+
+<video id="vorschau" autoplay playsinline muted style="width:50%;"></video>
+
+<script>
+    // ===================== Einstellungen =====================
+
+    const FPS = 15;               // Bilder pro Sekunde, die geschickt werden
+    const JPEG_QUALITY = 0.95;    // JPEG-Qualität: 0.0 (klein) bis 1.0 (beste)
+
+    const VIDEO_WIDTH = 3840;     // Wunsch-Auflösung der Kamera (4K)
+    const VIDEO_HEIGHT = 2160;    // "ideal": Safari nimmt das Nächstbeste
+
+    const TIMEOUT_MS = 1000;      // ohne neuen Rahmen von Python so lange
+                                  // warten, dann wieder das ganze Bild senden
+
+    // ===================== Zustand =====================
+
+    let rahmen = null;                // letzter Rahmen von Python {x, y, b, h}, null = keiner
+    let letzer_rahmen_zeit = null;    // Zeitpunkt (ms), wann der letzte Rahmen kam
+
+    // ===================== Kamera =====================
+
+    const video = document.getElementById("vorschau");
+
+    navigator.mediaDevices.getUserMedia({
+        video: {
+            facingMode: "environment",          // Rückkamera
+            width:  { ideal: VIDEO_WIDTH },
+            height: { ideal: VIDEO_HEIGHT }
+        }
+    })
+        .then(function (stream) {
+            // Kamera ist bereit: Bild ins Video-Feld stecken
+            video.srcObject = stream;
+        })
+        .catch(function (fehler) {
+            // z.B. Kamera nicht erlaubt
+            alert("Fehler: " + fehler);
+        });
+
+    // ===================== WebSocket =====================
+
+    // Leitung zum Python-Server; location.host ist die Adresse,
+    // von der diese Seite geladen wurde (z.B. 172.20.10.14:8443)
+    const socket = new WebSocket("wss://" + location.host + "/ws");
+
+    // Python schickt einen neuen Rahmen um die Marker (in Video-Koordinaten)
+    socket.onmessage = function (ereignis) {
+        const daten = JSON.parse(ereignis.data);
+
+        document.getElementById("info").textContent =
+            "Marker bei x=" + daten.x + ", y=" + daten.y +
+            ", b=" + daten.b + ", h=" + daten.h;
+
+        rahmen = daten;                       // ab dem nächsten Bild benutzen
+        letzer_rahmen_zeit = Date.now();      // merken, wann er kam
+    };
+
+    // ===================== Bild senden =====================
+
+    // Unsichtbare Leinwand, auf die der Ausschnitt gemalt wird
+    const leinwand = document.createElement("canvas");
+    const zeichner = leinwand.getContext("2d");
+
+    function bildSenden() {
+        // Nur senden, wenn: Video läuft, Leitung offen, letztes Bild schon weg
+        const bereit = video.videoWidth > 0
+            && socket.readyState === WebSocket.OPEN
+            && socket.bufferedAmount === 0;
+
+        if (!bereit) {
+            return;
+        }
+
+        let crop_X, crop_Y, crop_B, crop_H;
+
+        // Zu lange kein Rahmen von Python: wieder das ganze Bild nehmen
+        if (rahmen !== null && Date.now() - letzer_rahmen_zeit > TIMEOUT_MS) {
+            rahmen = null;
+        }
+
+        if (rahmen === null) {
+            // Noch kein Rahmen: das ganze Videobild senden, damit Python
+            // die Marker überall finden kann
+            crop_B = video.videoWidth;
+            crop_H = video.videoHeight;
+            crop_X = (video.videoWidth - crop_B) / 2;
+            crop_Y = (video.videoHeight - crop_H) / 2;
+        } else {
+            // Rahmen von Python benutzen
+            crop_B = rahmen.b;
+            crop_H = rahmen.h;
+            crop_X = rahmen.x;
+            crop_Y = rahmen.y;
+        }
+
+        // Grenzprüfung: Ausschnitt darf nicht über den Videorand hinaus
+        crop_X = Math.max(0, Math.min(crop_X, video.videoWidth - crop_B));
+        crop_Y = Math.max(0, Math.min(crop_Y, video.videoHeight - crop_H));
+
+        // Leinwand so gross wie der Ausschnitt
+        leinwand.width = crop_B;
+        leinwand.height = crop_H;
+
+        // Ausschnitt aus dem Video auf die Leinwand kopieren
+        //                 Quelle (im Video)             Ziel (auf der Leinwand)
+        zeichner.drawImage(video, crop_X, crop_Y, crop_B, crop_H, 0, 0, crop_B, crop_H);
+
+        // Zuerst die Lage des Ausschnitts schicken (gehört zum nächsten Bild) ...
+        socket.send(JSON.stringify({ cropX: crop_X, cropY: crop_Y }));
+
+        // ... dann das Bild selbst als JPEG
+        leinwand.toBlob(function (bild) {
+            socket.send(bild);
+        }, "image/jpeg", JPEG_QUALITY);
+    }
+
+    // bildSenden regelmässig aufrufen (Wartezeit in Millisekunden)
+    setInterval(bildSenden, 1000 / FPS);
+</script>
