@@ -1,9 +1,11 @@
 // =============================================================================
 // Schrittmotor mit zwei Tastern steuern  –  Raspberry Pi 4 + DRV8434S
 //
-//   Up-Taster   (GPIO9)  gedrückt halten -> Motor fährt hoch
-//   Down-Taster (GPIO11) gedrückt halten -> Motor fährt runter
-//   Loslassen / beide gedrückt -> Stopp
+//   AKTUELL: Tastersteuerung auskommentiert. Der Motor dreht abwechselnd
+//   TAKT_S Sekunden rechts, dann TAKT_S Sekunden links (bis Ctrl+C).
+//
+//   (Auskommentiert) Up-Taster   (GPIO9)  gedrückt halten -> Motor fährt hoch
+//   (Auskommentiert) Down-Taster (GPIO11) gedrückt halten -> Motor fährt runter
 //
 //   Dehnmessstreifen über HX711 (DOUT=GPIO23, SCK=GPIO24) werden die ganze
 //   Zeit gelesen – im Stillstand und während der Motor fährt.
@@ -30,10 +32,12 @@ constexpr int HX_DOUT = 23, HX_SCK = 24;      // HX711 (Dehnmessstreifen)
 
 // ---------------- Einstellungen ----------------
 constexpr int DIR_HOCH = 1;               // fährt der Motor falsch herum? -> 0
+constexpr double TAKT_S   = 2.0;          // Sekunden pro Richtung (rechts / links)
 
 constexpr double PERIODE_START_US = 2000; // µs pro Schritt beim Anfahren
 constexpr double PERIODE_MIN_US   = 500;  // µs pro Schritt bei Endgeschwindigkeit
 constexpr double RAMPE            = 0.97; // Beschleunigungsfaktor pro Schritt
+constexpr double GESCHWINDIGKEIT  = 0.20; // Anteil der Endgeschwindigkeit (0.20 = 20 %)
 
 // Software-SPI für den DRV8434S. Auf true setzen, sobald verdrahtet.
 constexpr bool SPI_AKTIV = true;
@@ -175,14 +179,16 @@ static void dmsPoll() {
 // ============================================================================
 // Logik
 // ============================================================================
-enum Richtung { KEINE, HOCH, RUNTER };
+enum Richtung { KEINE, HOCH, RUNTER };   // HOCH = rechts, RUNTER = links
 
+/* --- Tastersteuerung (auskommentiert) ---
 static Richtung gewuenschteRichtung() {
     int up = gpio.read(TASTER_UP), down = gpio.read(TASTER_DOWN);
     if (up && !down) return HOCH;
     if (down && !up) return RUNTER;
     return KEINE;
 }
+--- Ende Tastersteuerung --- */
 
 static bool faultOk() { return gpio.read(FAULT) == 1; }   // FAULT ist low-aktiv
 
@@ -192,8 +198,8 @@ int main() {
     std::signal(SIGTERM, onSignal);
 
     gpio.output(STEP); gpio.output(DIR);
-    gpio.input(TASTER_UP, Gpio::DOWN);
-    gpio.input(TASTER_DOWN, Gpio::DOWN);
+    // gpio.input(TASTER_UP, Gpio::DOWN);     // Tastersteuerung auskommentiert
+    // gpio.input(TASTER_DOWN, Gpio::DOWN);
     gpio.input(FAULT, Gpio::UP);
     if (DMS_AKTIV) {
         gpio.output(HX_SCK, 0);                       // SCK low = HX711 aktiv
@@ -208,6 +214,7 @@ int main() {
 
     if (DMS_AKTIV) dmsTarieren();
 
+    /* --- Tastersteuerung (auskommentiert) ---
     std::puts("Bereit. Up/Down gedrückt halten zum Fahren. Ctrl+C = Ende.");
     int letzteMeldung = -1;
 
@@ -241,6 +248,40 @@ int main() {
 
         if (r == KEINE) letzteMeldung = -1;
         usleep(10000);                                    // 10 ms, schont die CPU
+    }
+
+    --- Ende Tastersteuerung --- */
+
+    std::printf("Bereit. Motor dreht je %.1f s rechts, dann links. Ctrl+C = Ende.\n", TAKT_S);
+
+    Richtung r = HOCH;                                    // HOCH = rechts
+    while (laufen) {
+        dmsPoll();
+
+        if (!faultOk()) {
+            std::puts("FEHLER: DRV8434S meldet FAULT – Motor gesperrt.");
+            while (laufen && !faultOk()) { dmsPoll(); usleep(50000); }
+            continue;
+        }
+
+        std::printf("Drehe %s (%.1f s) ...\n", r == HOCH ? "rechts" : "links", TAKT_S);
+        gpio.write(DIR, r == HOCH ? DIR_HOCH : 1 - DIR_HOCH);
+        warteUs(5);                                       // DIR-Setup-Zeit
+
+        const double zielPeriode = PERIODE_MIN_US / GESCHWINDIGKEIT;   // 20 % -> 2500 µs
+        double periode = PERIODE_START_US > zielPeriode ? PERIODE_START_US : zielPeriode;
+        long schritte = 0;
+        auto ende = std::chrono::steady_clock::now() + std::chrono::duration<double>(TAKT_S);
+        while (laufen && faultOk() && std::chrono::steady_clock::now() < ende) {
+            gpio.write(STEP, 1); warteUs(periode / 2);
+            gpio.write(STEP, 0); warteUs(periode / 2);
+            dmsPoll();                                    // DMS auch während der Fahrt
+            if (periode > zielPeriode) { periode *= RAMPE; if (periode < zielPeriode) periode = zielPeriode; }
+            ++schritte;
+        }
+        std::printf("Stopp nach %ld Schritten.\n", schritte);
+
+        r = (r == HOCH) ? RUNTER : HOCH;                  // Richtung wechseln
     }
 
     gpio.write(STEP, 0);
