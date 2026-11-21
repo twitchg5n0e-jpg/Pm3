@@ -27,6 +27,7 @@
 
 // ---------------- Pins (BCM) ----------------
 constexpr int STEP = 17, DIR = 27, FAULT = 22;
+constexpr int SLP = 4;                        // DRV8434S SLP (Pi-Pin 7): HIGH = Treiber wach
 constexpr int TASTER_UP = 9, TASTER_DOWN = 11;
 constexpr int HX_DOUT = 23, HX_SCK = 24;      // HX711 (Dehnmessstreifen)
 
@@ -41,6 +42,9 @@ constexpr double GESCHWINDIGKEIT  = 0.20; // Anteil der Endgeschwindigkeit (0.20
 
 // Software-SPI für den DRV8434S. Auf true setzen, sobald verdrahtet.
 constexpr bool SPI_AKTIV = true;
+// Motorstrom in Prozent des Maximalstroms des Treibers (6.25 % Schritte, 6.25 … 100).
+// Wird der Motor oder der Treiber zu heiss -> kleiner; fehlt Kraft / verliert Schritte -> grösser.
+constexpr double STROM_PROZENT = 50.0;
 constexpr int SPI_SCLK = 5, SPI_SDI = 6, SPI_SDO = 13, SPI_SCS = 26;
 
 // Dehnmessstreifen (HX711)
@@ -110,6 +114,7 @@ static void warteUs(double us) {
 // ============================================================================
 static uint16_t spiTransfer(uint16_t word) {
     gpio.write(SPI_SCS, 0);
+    warteUs(1);                                   // SCS-Setup-Zeit
     uint16_t rx = 0;
     for (int i = 15; i >= 0; --i) {
         gpio.write(SPI_SCLK, 1);
@@ -120,6 +125,7 @@ static uint16_t spiTransfer(uint16_t word) {
         warteUs(1);
     }
     gpio.write(SPI_SCS, 1);
+    warteUs(2);                                   // SCS-High-Zeit vor dem nächsten Wort
     return rx;
 }
 static uint8_t drvRead(uint8_t a)             { return spiTransfer((1u << 14) | ((a & 0x1F) << 9)) & 0xFF; }
@@ -127,6 +133,13 @@ static void    drvWrite(uint8_t a, uint8_t d) { spiTransfer(((a & 0x1F) << 9) | 
 
 static void drvEnable() {
     drvWrite(0x06, drvRead(0x06) | 0x80);   // CTRL4: CLR_FLT (Fehler löschen)
+    // CTRL1: TRQ_DAC (Bit 7..4), 0000 = 100 %, jede Stufe -6.25 %, 1111 = 6.25 %
+    int stufe = static_cast<int>((100.0 - STROM_PROZENT) / 6.25 + 0.5);
+    if (stufe < 0) stufe = 0;
+    if (stufe > 15) stufe = 15;
+    drvWrite(0x03, static_cast<uint8_t>((drvRead(0x03) & 0x0F) | (stufe << 4)));
+    uint8_t ctrl1 = drvRead(0x03);
+    std::printf("DRV8434S Strom = %.2f %% (CTRL1 = 0x%02X)\n", 100.0 - 6.25 * (ctrl1 >> 4), ctrl1);
     drvWrite(0x04, drvRead(0x04) | 0x80);   // CTRL2: EN_OUT  (Endstufe ein)
     std::printf("DRV8434S CTRL2 = 0x%02X (Bit 7 muss 1 sein)\n", drvRead(0x04));
 }
@@ -198,6 +211,9 @@ int main() {
     std::signal(SIGTERM, onSignal);
 
     gpio.output(STEP); gpio.output(DIR);
+    gpio.output(SLP, 0); warteUs(1000);       // Treiber kurz schlafen legen = Register-Reset
+    gpio.write(SLP, 1);                       // Treiber aufwecken
+    warteUs(5000);                            // Aufwachzeit abwarten (> 1.2 ms)
     // gpio.input(TASTER_UP, Gpio::DOWN);     // Tastersteuerung auskommentiert
     // gpio.input(TASTER_DOWN, Gpio::DOWN);
     gpio.input(FAULT, Gpio::UP);
