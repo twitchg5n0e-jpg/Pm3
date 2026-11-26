@@ -15,10 +15,10 @@ Ablauf:
 
 import json
 import ssl
-
 import cv2
 import numpy as np
 from aiohttp import web
+import asyncio
 
 
 # ===================== Einstellungen =====================
@@ -67,6 +67,8 @@ async def leitung(request):
     print("iPhone verbunden!")
 
     cv2.namedWindow("Stream", cv2.WINDOW_NORMAL)   # Fenster mit der Maus skalierbar
+    cv2.namedWindow("Entzerrt", cv2.WINDOW_NORMAL)   # Fenster mit der Maus skalierbar
+    
 
     async for nachricht in ws:
 
@@ -160,11 +162,98 @@ async def leitung(request):
 
     return ws
 
+# ===================== Verbindung zu C++ =====================
+
+# ===================== Verbindung zu C++ =====================
+
+STEUERUNG_HOST = "127.0.0.1"   # C++ läuft auf demselben Rechner
+STEUERUNG_PORT = 7000          # Port des Befehlsservers (mit dem Kollegen abgemacht)
+
+browser = set()                # alle offenen /steuerung-WebSockets
+cpp_schreiber = None           # Schreib-Ende der TCP-Verbindung, None = nicht verbunden
+
+
+async def an_alle_browser(text):
+    """Schickt einen Text an alle offenen /steuerung-WebSockets."""
+    for ws in list(browser):          # list(): Kopie, falls sich die Menge ändert
+        try:
+            await ws.send_str(text)
+        except ConnectionResetError:
+            browser.discard(ws)       # Browser ist weg
+
+
+async def mit_cpp_verbinden():
+    """Läuft im Hintergrund: verbindet sich mit C++ und leitet jede Zeile weiter."""
+    global cpp_schreiber
+
+    while True:
+        # ---------- Verbinden (bei Fehler: 2 s warten, neu versuchen) ----------
+        try:
+            leser, schreiber = await asyncio.open_connection(STEUERUNG_HOST, STEUERUNG_PORT)
+        except OSError:
+            await asyncio.sleep(2)
+            continue
+
+        print("C++ verbunden")
+        cpp_schreiber = schreiber
+
+        # ---------- Zeilen lesen und an die Browser weitergeben ----------
+        try:
+            while True:
+                zeile = await leser.readline()   # wartet bis zum nächsten "\n"
+                if not zeile:                    # leer = C++ hat die Verbindung geschlossen
+                    break
+                await an_alle_browser(zeile.decode().strip())
+        except ConnectionResetError:
+            pass                                 # C++ ist abgestürzt oder beendet
+
+        # ---------- Verbindung weg ----------
+        print("C++ getrennt")
+        cpp_schreiber = None
+        schreiber.close()
+        await an_alle_browser('{"zustand": "getrennt"}')
+        await asyncio.sleep(2)
+
+
+async def steuerung(request):
+    """WebSocket /steuerung: Befehle vom Browser an C++ weitergeben."""
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    browser.add(ws)
+    print("Steuerung: Browser verbunden")
+
+    try:
+        async for nachricht in ws:
+            if nachricht.type == web.WSMsgType.TEXT:
+                befehl = nachricht.data
+                print("Befehl:", befehl)
+                if cpp_schreiber is not None:
+                    cpp_schreiber.write((befehl + "\n").encode())
+                    await cpp_schreiber.drain()
+                else:
+                    print("C++ nicht verbunden, Befehl verworfen")
+    finally:
+        browser.discard(ws)
+        print("Steuerung: Browser getrennt")
+
+    return ws
+
+
+cpp_aufgabe = None             # die Hintergrund-Aufgabe (merken, damit Python sie nicht wegräumt)
+
+
+async def beim_start(app):
+    """Wird einmal beim Start des Servers aufgerufen."""
+    global cpp_aufgabe
+    cpp_aufgabe = asyncio.create_task(mit_cpp_verbinden())
 
 # ===================== Start =====================
 
-app.router.add_get("/", startseite)     # Webseite
-app.router.add_get("/ws", leitung)      # WebSocket
+app.router.add_get("/", startseite)            # Webseite
+app.router.add_get("/ws", leitung)             # WebSocket: Bilder
+app.router.add_get("/steuerung", steuerung)    # WebSocket: Befehle und Zustand (C++)
+
+app.on_startup.append(beim_start)              # Verbindung zu C++ im Hintergrund starten
 
 # HTTPS mit selbst erstelltem Zertifikat (Safari braucht HTTPS für die Kamera)
 ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
